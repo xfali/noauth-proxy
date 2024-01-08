@@ -19,7 +19,7 @@ package main
 
 import (
 	"fmt"
-	"github.com/xfali/sso-proxy/pkg/app"
+	"github.com/xfali/noauth-proxy/pkg/app"
 	"os"
 )
 

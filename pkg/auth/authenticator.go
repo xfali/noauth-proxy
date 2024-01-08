@@ -23,6 +23,7 @@ import (
 )
 
 type Authenticator interface {
-	AttachAuthentication(ctx context.Context, resp http.ResponseWriter, auth Authentication) error
+	AttachAuthentication(ctx context.Context, resp http.ResponseWriter, req *http.Request) error
 	ExtractAuthentication(ctx context.Context, req *http.Request) (Authentication, error)
+	Refresh(ctx context.Context, authentication Authentication) error
 }

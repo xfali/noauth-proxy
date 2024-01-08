@@ -21,8 +21,8 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"github.com/xfali/sso-proxy/pkg/auth"
-	"github.com/xfali/sso-proxy/pkg/log"
+	"github.com/xfali/noauth-proxy/pkg/auth"
+	"github.com/xfali/noauth-proxy/pkg/log"
 	"net/http"
 	"net/http/httputil"
 	"sync"
@@ -59,7 +59,24 @@ func NewHandler(logger log.LogFunc) *handler {
 }
 
 func (h *handler) Switch(w http.ResponseWriter, r *http.Request) {
-
+	authType := r.URL.Query().Get("auth_type")
+	if authType == "" {
+		http.Error(w, "Auth type query param is empty", http.StatusBadRequest)
+		return
+	}
+	if r.Method == http.MethodPost {
+		ctx := context.Background()
+		authenticator, have := h.authMgr.GetAuthenticator(ctx, authType)
+		if !have {
+			http.Error(w, "Auth type not support: "+authType, http.StatusBadRequest)
+			return
+		}
+		err := authenticator.AttachAuthentication(ctx, w, r)
+		if err != nil {
+			http.Error(w, "Attach Authentication failed: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+	}
 }
 
 func (h *handler) Proxy(w http.ResponseWriter, r *http.Request) {
@@ -96,7 +113,7 @@ func (h *handler) Proxy(w http.ResponseWriter, r *http.Request) {
 	auth.AttachToRequest(req)
 	px.proxy.ServeHTTP(resp, req)
 	if resp.code == http.StatusUnauthorized {
-		err = auth.Refresh(ctx)
+		err = px.authenticator.Refresh(ctx, auth)
 		if err != nil {
 			h.logger("Refresh Authentication failed: %v \n", err)
 			return

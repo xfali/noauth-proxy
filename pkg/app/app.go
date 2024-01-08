@@ -18,8 +18,8 @@
 package app
 
 import (
-	"github.com/xfali/sso-proxy/pkg/log"
-	"github.com/xfali/sso-proxy/pkg/server"
+	"github.com/xfali/noauth-proxy/pkg/log"
+	"github.com/xfali/noauth-proxy/pkg/server"
 	"io"
 	"os"
 	"os/signal"

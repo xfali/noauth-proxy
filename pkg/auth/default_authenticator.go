@@ -18,12 +18,14 @@
 package auth
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/xfali/sso-proxy/pkg/encrypt"
+	"github.com/xfali/noauth-proxy/pkg/encrypt"
+	"io"
 	"net/http"
 	"reflect"
 )
@@ -36,26 +38,38 @@ type defaultAuthenticator struct {
 	authType reflect.Type
 }
 
-func NewAuthenticator() *defaultAuthenticator {
-	ret := &defaultAuthenticator{}
+func NewAuthenticator(o Authentication) *defaultAuthenticator {
+	ret := &defaultAuthenticator{
+		authType: reflect.TypeOf(o),
+	}
 
 	return ret
 }
 
-func (a *defaultAuthenticator) AttachAuthentication(ctx context.Context, resp http.ResponseWriter, auth Authentication) error {
-	if m, ok := auth.(Marshaler); ok {
-		t := reflect.TypeOf(auth)
-		if a.authType != nil {
-			if a.authType != t {
-				return fmt.Errorf("Exists type %s not match target type %s ", a.authType.String(), t.String())
-			}
-		}
-		d, err := m.AuthMarshal()
+func (a *defaultAuthenticator) newAuthentication() Authentication {
+	return reflect.New(a.authType).Elem().Interface().(Authentication)
+}
+
+func (a *defaultAuthenticator) AttachAuthentication(ctx context.Context, resp http.ResponseWriter, req *http.Request) error {
+	body := req.Body
+	defer body.Close()
+
+	buf := &bytes.Buffer{}
+	_, err := io.Copy(buf, body)
+	if err != nil {
+		return err
+	}
+	auth := a.newAuthentication()
+	if m, ok := auth.(Unmarshaler); ok {
+		err = m.AuthUnmarshal(buf.Bytes())
 		if err != nil {
 			return err
 		}
-		if a.authType == nil {
-			a.authType = t
+	}
+	if m, ok := auth.(Marshaler); ok {
+		d, err := m.AuthMarshal()
+		if err != nil {
+			return err
 		}
 		cookieData := base64.StdEncoding.EncodeToString(d)
 		cookie := &http.Cookie{
@@ -73,7 +87,7 @@ func (a *defaultAuthenticator) ExtractAuthentication(ctx context.Context, req *h
 	if a.authType == nil {
 		panic("Authentication type unknown ")
 	}
-	auth := reflect.New(a.authType).Elem().Interface()
+	auth := a.newAuthentication()
 	c, err := req.Cookie(CookieNamePayload)
 	if err != nil {
 		return nil, err
@@ -92,6 +106,10 @@ func (a *defaultAuthenticator) ExtractAuthentication(ctx context.Context, req *h
 	return nil, errors.New("Not support Authentication type ")
 }
 
+func (a *defaultAuthenticator) Refresh(ctx context.Context, authentication Authentication) error {
+	return authentication.Refresh(ctx)
+}
+
 type UsernamePasswordAuthentication struct {
 	Protocol string `json:"protocol"`
 	Host     string `json:"host"`
@@ -108,14 +126,20 @@ func (a *UsernamePasswordAuthentication) WithEncrypt(service encrypt.Service) {
 	} else {
 		a.service = service
 	}
-	u, _ := a.service.Encrypt([]byte(a.Username))
-	a.Username = string(u)
-	p, _ := a.service.Encrypt([]byte(a.Password))
-	a.Password = string(p)
+	//u, _ := a.service.Encrypt([]byte(a.Username))
+	//a.Username = string(u)
+	//p, _ := a.service.Encrypt([]byte(a.Password))
+	//a.Password = string(p)
 }
 
 func (a *UsernamePasswordAuthentication) ID() string {
 	return fmt.Sprintf("%s@[%s]%s://%s:%d", a.Username, a.Password, a.Protocol, a.Host, a.Port)
+}
+
+func (a *UsernamePasswordAuthentication) Decrypt() (username, password string) {
+	u, _ := a.service.Decrypt([]byte(a.Username))
+	p, _ := a.service.Decrypt([]byte(a.Password))
+	return string(u), string(p)
 }
 
 func (a *UsernamePasswordAuthentication) AttachToRequest(req *http.Request) {

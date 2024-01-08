@@ -1,4 +1,4 @@
-module github.com/xfali/sso-proxy
+module github.com/xfali/noauth-proxy
 
 go 1.18
 
