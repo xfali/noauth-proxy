@@ -70,7 +70,7 @@ func (a *defaultAuthenticator) SetEncrypt(service encrypt.Service) {
 	a.encryptSvc = service
 }
 
-func (a *defaultAuthenticator) AttachAuthentication(ctx context.Context, resp http.ResponseWriter, req *http.Request) (Authentication, error) {
+func (a *defaultAuthenticator) ReadAuthentication(ctx context.Context, req *http.Request) (Authentication, error) {
 	body := req.Body
 	defer body.Close()
 
@@ -86,10 +86,14 @@ func (a *defaultAuthenticator) AttachAuthentication(ctx context.Context, resp ht
 			return nil, err
 		}
 	}
+	return auth, nil
+}
+
+func (a *defaultAuthenticator) AttachAuthentication(ctx context.Context, resp http.ResponseWriter, auth Authentication) error {
 	if m, ok := auth.(Marshaler); ok {
 		d, err := m.AuthMarshal()
 		if err != nil {
-			return nil, err
+			return err
 		}
 		cookieData := base64.StdEncoding.EncodeToString(d)
 		cookie := &http.Cookie{
@@ -100,7 +104,7 @@ func (a *defaultAuthenticator) AttachAuthentication(ctx context.Context, resp ht
 		}
 		http.SetCookie(resp, cookie)
 	}
-	return auth, nil
+	return nil
 }
 
 func (a *defaultAuthenticator) ExtractAuthentication(ctx context.Context, req *http.Request) (Authentication, error) {

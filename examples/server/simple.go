@@ -31,6 +31,7 @@ func main() {
 		_, _ = fmt.Fprintf(os.Stderr, format, args...)
 	}
 	h := server.NewHandler(log)
+	defer h.Close()
 	auth.Register("test", auth.NewAuthenticator(&ex_auth.ExampleAuthentication{}))
 	go func() {
 		ex_auth.Run(8081)
@@ -38,5 +39,7 @@ func main() {
 	app.RunWithServerOpts(log,
 		server.OptAddHandle("/", h.Proxy),
 		server.OptAddHandle("/_switch", h.Switch),
+		server.OptAddHandle("/_token", h.GenerateToken),
+		server.OptAddHandle("/_redirect", h.Redirect),
 	)
 }

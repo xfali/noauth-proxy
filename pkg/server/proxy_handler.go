@@ -92,7 +92,12 @@ func (h *handler) Switch(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Auth type not support: "+authType, http.StatusBadRequest)
 			return
 		}
-		authentication, err := authenticator.AttachAuthentication(ctx, w, r)
+		authentication, err := authenticator.ReadAuthentication(ctx, r)
+		if err != nil {
+			http.Error(w, "Read Authentication failed: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		err = authenticator.AttachAuthentication(ctx, w, authentication)
 		if err != nil {
 			http.Error(w, "Attach Authentication failed: "+err.Error(), http.StatusBadRequest)
 			return
@@ -108,6 +113,9 @@ func (h *handler) Switch(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Create Reverse Proxy failed: "+err.Error(), http.StatusBadRequest)
 			return
 		}
+	} else {
+		http.Error(w, "Switch Only support POST method ", http.StatusBadRequest)
+		return
 	}
 }
 
@@ -175,7 +183,7 @@ func (h *handler) GenerateToken(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Auth type not support: "+authType, http.StatusBadRequest)
 			return
 		}
-		authentication, err := authenticator.AttachAuthentication(ctx, w, r)
+		authentication, err := authenticator.ReadAuthentication(ctx, r)
 		if err != nil {
 			http.Error(w, "Attach Authentication failed: "+err.Error(), http.StatusBadRequest)
 			return
@@ -187,7 +195,7 @@ func (h *handler) GenerateToken(w http.ResponseWriter, r *http.Request) {
 		}
 		_, _ = w.Write(t.Bytes())
 	} else {
-		http.Error(w, "Only support POST method ", http.StatusBadRequest)
+		http.Error(w, "Generate Token Only support POST method ", http.StatusBadRequest)
 		return
 	}
 }
@@ -212,17 +220,23 @@ func (h *handler) Redirect(w http.ResponseWriter, r *http.Request) {
 		redirectUrl, _ = url.QueryUnescape(redirectUrl)
 
 		ctx := context.Background()
-		authenticator, err := h.tokenMgr.GetAuthentication(ctx, token.Token(authToken))
+		authentication, err := h.tokenMgr.GetAuthentication(ctx, token.Token(authToken))
 		if err != nil {
 			http.Error(w, "GetAuthentication failed: "+err.Error(), http.StatusBadRequest)
 			return
 		}
+		authenticator, have := h.authMgr.GetAuthenticator(ctx, authType)
+		if !have {
+			http.Error(w, "Auth type not support: "+authType, http.StatusBadRequest)
+			return
+		}
 
-		authentication, err := authenticator.AttachAuthentication(ctx, w, r)
+		err = authenticator.AttachAuthentication(ctx, w, authentication)
 		if err != nil {
 			http.Error(w, "Attach Authentication failed: "+err.Error(), http.StatusBadRequest)
 			return
 		}
+
 		cookie := &http.Cookie{
 			Name:     CookieNameType,
 			Value:    authType,
@@ -239,7 +253,7 @@ func (h *handler) Redirect(w http.ResponseWriter, r *http.Request) {
 		req.AddCookie(cookie)
 		http.Redirect(w, r, redirectUrl, http.StatusOK)
 	} else {
-		http.Error(w, "Only support GET method: ", http.StatusBadRequest)
+		http.Error(w, "Redirect Only support GET method: ", http.StatusBadRequest)
 		return
 	}
 }
@@ -298,6 +312,18 @@ func (o handleOpts) AuthenticatorManager(manager auth.AuthenticatorManager) Hand
 func (o handleOpts) SetAuthorizationVerifier(verifier auth.AuthorizationVerifier) HandlerOpt {
 	return func(h *handler) {
 		h.verifier = verifier
+	}
+}
+
+func (o handleOpts) SetTokenManager(manager token.Manager) HandlerOpt {
+	return func(h *handler) {
+		h.tokenMgr = manager
+	}
+}
+
+func (o handleOpts) SetTokenExpireTime(tokenExpireTime time.Duration) HandlerOpt {
+	return func(h *handler) {
+		h.tokenExpireTime = tokenExpireTime
 	}
 }
 
