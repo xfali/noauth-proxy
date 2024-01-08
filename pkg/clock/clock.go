@@ -15,28 +15,8 @@
  * limitations under the License.
  */
 
-package auth
+package clock
 
-import (
-	"context"
-	"github.com/xfali/noauth-proxy/pkg/auth"
-	token2 "github.com/xfali/noauth-proxy/pkg/token"
-	"net/http"
-)
+import "time"
 
-var (
-	token = token2.RandomToken(16)
-)
-
-type ExampleAuthentication struct {
-	auth.UsernamePasswordAuthentication
-}
-
-func (a *ExampleAuthentication) AttachToRequest(req *http.Request) {
-	req.Header.Add("Authorization", token)
-}
-
-func (a *ExampleAuthentication) Refresh(ctx context.Context) error {
-	token = token2.RandomToken(16)
-	return nil
-}
+var Now func() time.Time = time.Now

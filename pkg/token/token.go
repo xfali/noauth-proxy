@@ -15,28 +15,14 @@
  * limitations under the License.
  */
 
-package auth
+package token
 
-import (
-	"context"
-	"github.com/xfali/noauth-proxy/pkg/auth"
-	token2 "github.com/xfali/noauth-proxy/pkg/token"
-	"net/http"
-)
+type Token string
 
-var (
-	token = token2.RandomToken(16)
-)
-
-type ExampleAuthentication struct {
-	auth.UsernamePasswordAuthentication
+func (t Token) String() string {
+	return string(t)
 }
 
-func (a *ExampleAuthentication) AttachToRequest(req *http.Request) {
-	req.Header.Add("Authorization", token)
-}
-
-func (a *ExampleAuthentication) Refresh(ctx context.Context) error {
-	token = token2.RandomToken(16)
-	return nil
+func (t Token) Bytes() []byte {
+	return []byte(t)
 }

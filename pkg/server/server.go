@@ -68,6 +68,14 @@ func OptAddHandle(pattern string, handlerFunc http.HandlerFunc) Opt {
 	}
 }
 
+func OptRegister(registers ...HttpHandlerRegister) Opt {
+	return func(s *server) {
+		for _, r := range registers {
+			r.RegisterHandler(s.mux.HandleFunc)
+		}
+	}
+}
+
 func (s *server) init() {
 	if s.port == 0 {
 		s.port = DefaultPort

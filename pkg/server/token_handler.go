@@ -15,28 +15,33 @@
  * limitations under the License.
  */
 
-package auth
+package server
 
 import (
-	"context"
 	"github.com/xfali/noauth-proxy/pkg/auth"
-	token2 "github.com/xfali/noauth-proxy/pkg/token"
-	"net/http"
+	"github.com/xfali/noauth-proxy/pkg/log"
+	"github.com/xfali/noauth-proxy/pkg/token"
+	"time"
 )
 
-var (
-	token = token2.RandomToken(16)
-)
-
-type ExampleAuthentication struct {
-	auth.UsernamePasswordAuthentication
+type tokenHandler struct {
+	logger          log.LogFunc
+	tokenMgr        token.Manager
+	authMgr         auth.AuthenticatorManager
+	tokenExpireTime time.Duration
 }
 
-func (a *ExampleAuthentication) AttachToRequest(req *http.Request) {
-	req.Header.Add("Authorization", token)
+func NewTokenHandler(logger log.LogFunc) *tokenHandler {
+	t := token.NewManager(-1)
+	ret := &tokenHandler{
+		logger:   logger,
+		tokenMgr: t,
+		authMgr:  auth.DefaultAuthenticatorMgr,
+	}
+	return ret
 }
 
-func (a *ExampleAuthentication) Refresh(ctx context.Context) error {
-	token = token2.RandomToken(16)
-	return nil
+func (h *tokenHandler) RegisterHandler(f RegisterFunc) {
+	f("/_token", h.GenerateToken)
+	f("/redirect", h.Redirect)
 }

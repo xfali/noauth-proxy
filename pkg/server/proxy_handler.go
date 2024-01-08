@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"github.com/xfali/noauth-proxy/pkg/auth"
 	"github.com/xfali/noauth-proxy/pkg/log"
+	"github.com/xfali/noauth-proxy/pkg/token"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -33,7 +34,8 @@ import (
 const (
 	CookieNameType = "sso-proxy-type"
 
-	AuthTimeout = 15 * time.Second
+	AuthTimeout            = 15 * time.Second
+	DefaultTokenExpireTime = 2 * time.Hour
 )
 
 type proxy struct {
@@ -45,8 +47,11 @@ type HandlerOpt func(*handler)
 
 type handler struct {
 	logger              log.LogFunc
-	authMgr             auth.AuthenticatorManager
 	reverseProxyCreator reverseProxyCreator
+	authMgr             auth.AuthenticatorManager
+	verifier            auth.AuthorizationVerifier
+	tokenMgr            token.Manager
+	tokenExpireTime     time.Duration
 
 	proxies   map[string]*httputil.ReverseProxy
 	proxyLock sync.RWMutex
@@ -66,6 +71,7 @@ func NewHandler(logger log.LogFunc, opts ...HandlerOpt) *handler {
 		authMgr:             auth.DefaultAuthenticatorMgr,
 		proxies:             map[string]*httputil.ReverseProxy{},
 		reverseProxyCreator: defaultReverseProxyCreator,
+		tokenExpireTime:     DefaultTokenExpireTime,
 	}
 	for _, opt := range opts {
 		opt(ret)
@@ -106,6 +112,12 @@ func (h *handler) Switch(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *handler) Proxy(w http.ResponseWriter, r *http.Request) {
+	if h.verifier != nil {
+		if !h.verifier.Verify(w, r) {
+			h.logger("Verify failed")
+			return
+		}
+	}
 	c, err := r.Cookie(CookieNameType)
 	if err != nil || c == nil {
 		w.WriteHeader(http.StatusBadGateway)
@@ -150,6 +162,95 @@ func (h *handler) Proxy(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (h *handler) GenerateToken(w http.ResponseWriter, r *http.Request) {
+	authType := r.URL.Query().Get("auth_type")
+	if authType == "" {
+		http.Error(w, "Auth type query param is empty", http.StatusBadRequest)
+		return
+	}
+	if r.Method == http.MethodPost {
+		ctx := context.Background()
+		authenticator, have := h.authMgr.GetAuthenticator(ctx, authType)
+		if !have {
+			http.Error(w, "Auth type not support: "+authType, http.StatusBadRequest)
+			return
+		}
+		authentication, err := authenticator.AttachAuthentication(ctx, w, r)
+		if err != nil {
+			http.Error(w, "Attach Authentication failed: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		t, err := h.tokenMgr.Generate(ctx, authentication, time.Now().Add(h.tokenExpireTime))
+		if err != nil {
+			http.Error(w, "Get Token failed: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		_, _ = w.Write(t.Bytes())
+	} else {
+		http.Error(w, "Only support POST method ", http.StatusBadRequest)
+		return
+	}
+}
+
+func (h *handler) Redirect(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodGet {
+		authType := r.URL.Query().Get("auth_type")
+		if authType == "" {
+			http.Error(w, "Auth type query param is empty", http.StatusBadRequest)
+			return
+		}
+		authToken := r.URL.Query().Get("token")
+		if authToken == "" {
+			http.Error(w, "Token query param is empty", http.StatusBadRequest)
+			return
+		}
+		redirectUrl := r.URL.Query().Get("redirect")
+		if redirectUrl == "" {
+			http.Error(w, "Redirect Url query param is empty", http.StatusBadRequest)
+			return
+		}
+		redirectUrl, _ = url.QueryUnescape(redirectUrl)
+
+		ctx := context.Background()
+		authenticator, err := h.tokenMgr.GetAuthentication(ctx, token.Token(authToken))
+		if err != nil {
+			http.Error(w, "GetAuthentication failed: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		authentication, err := authenticator.AttachAuthentication(ctx, w, r)
+		if err != nil {
+			http.Error(w, "Attach Authentication failed: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		cookie := &http.Cookie{
+			Name:     CookieNameType,
+			Value:    authType,
+			Path:     "/",
+			HttpOnly: true,
+		}
+		http.SetCookie(w, cookie)
+		err = h.tryCreateProxy(authentication)
+		if err != nil {
+			http.Error(w, "Create Reverse Proxy failed: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		req := r.Clone(r.Context())
+		req.AddCookie(cookie)
+		http.Redirect(w, r, redirectUrl, http.StatusOK)
+	} else {
+		http.Error(w, "Only support GET method: ", http.StatusBadRequest)
+		return
+	}
+}
+
+func (h *handler) Close() error {
+	if h.tokenMgr != nil {
+		return h.tokenMgr.Close()
+	}
+	return nil
+}
+
 func (h *handler) getProxy(authentication auth.Authentication) *httputil.ReverseProxy {
 	h.proxyLock.RLock()
 	defer h.proxyLock.RUnlock()
@@ -191,6 +292,12 @@ func (o handleOpts) ReverseProxyCreator(creator reverseProxyCreator) HandlerOpt 
 func (o handleOpts) AuthenticatorManager(manager auth.AuthenticatorManager) HandlerOpt {
 	return func(h *handler) {
 		h.authMgr = manager
+	}
+}
+
+func (o handleOpts) SetAuthorizationVerifier(verifier auth.AuthorizationVerifier) HandlerOpt {
+	return func(h *handler) {
+		h.verifier = verifier
 	}
 }
 
