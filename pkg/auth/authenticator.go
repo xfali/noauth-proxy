@@ -23,5 +23,6 @@ import (
 )
 
 type Authenticator interface {
+	AttachAuthentication(ctx context.Context, resp http.ResponseWriter, auth Authentication) error
 	ExtractAuthentication(ctx context.Context, req *http.Request) (Authentication, error)
 }

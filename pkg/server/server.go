@@ -59,6 +59,12 @@ func OptTlsFile(cert, key string) Opt {
 	}
 }
 
+func OptAddHandle(pattern string, handlerFunc http.HandlerFunc) Opt {
+	return func(s *server) {
+		http.HandleFunc(pattern, handlerFunc)
+	}
+}
+
 func (s *server) init() {
 	if s.port == 0 {
 		s.port = DefaultPort

@@ -58,7 +58,11 @@ func NewHandler(logger log.LogFunc) *handler {
 	return ret
 }
 
-func (h *handler) Serve(w http.ResponseWriter, r *http.Request) {
+func (h *handler) Switch(w http.ResponseWriter, r *http.Request) {
+
+}
+
+func (h *handler) Proxy(w http.ResponseWriter, r *http.Request) {
 	c, err := r.Cookie(CookieNameType)
 	if err != nil || c == nil {
 		w.WriteHeader(http.StatusBadGateway)
