@@ -25,35 +25,49 @@ import (
 	"github.com/xfali/noauth-proxy/pkg/log"
 	"net/http"
 	"net/http/httputil"
+	"net/url"
 	"sync"
 	"time"
 )
 
 const (
-	CookieNameType    = "sso-proxy-type"
-	CookieNamePayload = "sso-proxy-payload"
+	CookieNameType = "sso-proxy-type"
 
 	AuthTimeout = 15 * time.Second
 )
 
 type proxy struct {
-	authenticator auth.Authenticator
-	proxy         *httputil.ReverseProxy
+	authentication auth.Authentication
+	proxy          *httputil.ReverseProxy
 }
 
-type handler struct {
-	logger    log.LogFunc
-	authMgr   auth.AuthenticatorManager
-	transport http.RoundTripper
+type HandlerOpt func(*handler)
 
-	proxies   map[string]*proxy
+type handler struct {
+	logger              log.LogFunc
+	authMgr             auth.AuthenticatorManager
+	reverseProxyCreator reverseProxyCreator
+
+	proxies   map[string]*httputil.ReverseProxy
 	proxyLock sync.RWMutex
 }
 
-func NewHandler(logger log.LogFunc) *handler {
+type reverseProxyCreator func(u *url.URL) *httputil.ReverseProxy
+
+func defaultReverseProxyCreator(u *url.URL) *httputil.ReverseProxy {
+	p := httputil.NewSingleHostReverseProxy(u)
+	p.Transport = http.DefaultTransport
+	return p
+}
+
+func NewHandler(logger log.LogFunc, opts ...HandlerOpt) *handler {
 	ret := &handler{
-		logger:  logger,
-		proxies: map[string]*proxy{},
+		logger:              logger,
+		proxies:             map[string]*httputil.ReverseProxy{},
+		reverseProxyCreator: defaultReverseProxyCreator,
+	}
+	for _, opt := range opts {
+		opt(ret)
 	}
 	return ret
 }
@@ -71,9 +85,14 @@ func (h *handler) Switch(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Auth type not support: "+authType, http.StatusBadRequest)
 			return
 		}
-		err := authenticator.AttachAuthentication(ctx, w, r)
+		authentication, err := authenticator.AttachAuthentication(ctx, w, r)
 		if err != nil {
 			http.Error(w, "Attach Authentication failed: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		err = h.tryCreateProxy(authentication)
+		if err != nil {
+			http.Error(w, "Create Reverse Proxy failed: "+err.Error(), http.StatusBadRequest)
 			return
 		}
 	}
@@ -88,17 +107,16 @@ func (h *handler) Proxy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	authType := c.Value
-	px := h.getProxy(authType)
-	if px == nil {
+	ctx, _ := context.WithTimeout(context.Background(), AuthTimeout)
+	authenticator, have := h.authMgr.GetAuthenticator(ctx, authType)
+	if !have || authenticator == nil {
 		w.WriteHeader(http.StatusBadGateway)
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		_, _ = w.Write([]byte(fmt.Sprintf(BadGatewayHtml, authType+" Not support ")))
 		return
 	}
 
-	ctx, _ := context.WithTimeout(context.Background(), AuthTimeout)
-
-	auth, err := px.authenticator.ExtractAuthentication(ctx, r)
+	auth, err := authenticator.ExtractAuthentication(ctx, r)
 	if err != nil {
 		w.WriteHeader(http.StatusBadGateway)
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -106,29 +124,67 @@ func (h *handler) Proxy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	rp := h.getProxy(auth)
 	req := r.Clone(r.Context())
 	resp := newResponseWriter(w)
 	defer resp.flush()
 
 	auth.AttachToRequest(req)
-	px.proxy.ServeHTTP(resp, req)
+	rp.ServeHTTP(resp, req)
 	if resp.code == http.StatusUnauthorized {
-		err = px.authenticator.Refresh(ctx, auth)
+		err = authenticator.Refresh(ctx, auth)
 		if err != nil {
 			h.logger("Refresh Authentication failed: %v \n", err)
 			return
 		}
 		resp.reset()
 		auth.AttachToRequest(req)
-		px.proxy.ServeHTTP(resp, req)
+		rp.ServeHTTP(resp, req)
 	}
 }
 
-func (h *handler) getProxy(authType string) *proxy {
+func (h *handler) getProxy(authentication auth.Authentication) *httputil.ReverseProxy {
 	h.proxyLock.RLock()
 	defer h.proxyLock.RUnlock()
 
-	return h.proxies[authType]
+	return h.proxies[authentication.ID()]
+}
+
+func (h *handler) tryCreateProxy(authentication auth.Authentication) error {
+	h.proxyLock.Lock()
+	defer h.proxyLock.Unlock()
+
+	key := authentication.ID()
+	if v := h.proxies[key]; v != nil {
+		return nil
+	}
+	addr := authentication.PassAddress()
+	u, err := url.Parse(addr)
+	if err != nil {
+		return err
+	}
+
+	p := h.reverseProxyCreator(u)
+
+	h.proxies[authentication.ID()] = p
+	return nil
+}
+
+type handleOpts struct {
+}
+
+var HandleOpts handleOpts
+
+func (o handleOpts) ReverseProxyCreator(creator reverseProxyCreator) HandlerOpt {
+	return func(h *handler) {
+		h.reverseProxyCreator = creator
+	}
+}
+
+func (o handleOpts) AuthenticatorManager(manager auth.AuthenticatorManager) HandlerOpt {
+	return func(h *handler) {
+		h.authMgr = manager
+	}
 }
 
 type responseWriter struct {

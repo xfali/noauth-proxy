@@ -50,26 +50,26 @@ func (a *defaultAuthenticator) newAuthentication() Authentication {
 	return reflect.New(a.authType).Elem().Interface().(Authentication)
 }
 
-func (a *defaultAuthenticator) AttachAuthentication(ctx context.Context, resp http.ResponseWriter, req *http.Request) error {
+func (a *defaultAuthenticator) AttachAuthentication(ctx context.Context, resp http.ResponseWriter, req *http.Request) (Authentication, error) {
 	body := req.Body
 	defer body.Close()
 
 	buf := &bytes.Buffer{}
 	_, err := io.Copy(buf, body)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	auth := a.newAuthentication()
 	if m, ok := auth.(Unmarshaler); ok {
 		err = m.AuthUnmarshal(buf.Bytes())
 		if err != nil {
-			return err
+			return nil, err
 		}
 	}
 	if m, ok := auth.(Marshaler); ok {
 		d, err := m.AuthMarshal()
 		if err != nil {
-			return err
+			return nil, err
 		}
 		cookieData := base64.StdEncoding.EncodeToString(d)
 		cookie := &http.Cookie{
@@ -80,7 +80,7 @@ func (a *defaultAuthenticator) AttachAuthentication(ctx context.Context, resp ht
 		}
 		http.SetCookie(resp, cookie)
 	}
-	return nil
+	return auth, nil
 }
 
 func (a *defaultAuthenticator) ExtractAuthentication(ctx context.Context, req *http.Request) (Authentication, error) {
@@ -132,6 +132,10 @@ func (a *UsernamePasswordAuthentication) WithEncrypt(service encrypt.Service) {
 	//a.Password = string(p)
 }
 
+func (a *UsernamePasswordAuthentication) PassAddress() string {
+	return fmt.Sprintf("%s://%s:%d", a.Protocol, a.Host, a.Port)
+}
+
 func (a *UsernamePasswordAuthentication) ID() string {
 	return fmt.Sprintf("%s@[%s]%s://%s:%d", a.Username, a.Password, a.Protocol, a.Host, a.Port)
 }
@@ -143,11 +147,11 @@ func (a *UsernamePasswordAuthentication) Decrypt() (username, password string) {
 }
 
 func (a *UsernamePasswordAuthentication) AttachToRequest(req *http.Request) {
-
+	panic("Not Implement")
 }
 
 func (a *UsernamePasswordAuthentication) Refresh(ctx context.Context) error {
-	return nil
+	panic("Not Implement")
 }
 
 func (a *UsernamePasswordAuthentication) AuthMarshal() ([]byte, error) {

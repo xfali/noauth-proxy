@@ -32,6 +32,7 @@ type Unmarshaler interface {
 
 type Authentication interface {
 	ID() string
+	PassAddress() string
 	AttachToRequest(req *http.Request)
 	Refresh(ctx context.Context) error
 }
