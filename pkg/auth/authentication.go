@@ -19,6 +19,7 @@ package auth
 
 import (
 	"context"
+	"github.com/xfali/noauth-proxy/pkg/encrypt"
 	"net/http"
 )
 
@@ -31,6 +32,7 @@ type Unmarshaler interface {
 }
 
 type Authentication interface {
+	SetEncrypt(service encrypt.Service)
 	ID() string
 	PassAddress() string
 	AttachToRequest(req *http.Request)

@@ -35,19 +35,39 @@ const (
 )
 
 type defaultAuthenticator struct {
-	authType reflect.Type
+	authType   reflect.Type
+	isPointer  bool
+	encryptSvc encrypt.Service
 }
 
 func NewAuthenticator(o Authentication) *defaultAuthenticator {
+	t := reflect.TypeOf(o)
+	isPtr := false
+	if t.Kind() == reflect.Ptr {
+		t = t.Elem()
+		isPtr = true
+	}
 	ret := &defaultAuthenticator{
-		authType: reflect.TypeOf(o),
+		authType:   t,
+		isPointer:  isPtr,
+		encryptSvc: encrypt.GlobalService(),
 	}
 
 	return ret
 }
 
 func (a *defaultAuthenticator) newAuthentication() Authentication {
-	return reflect.New(a.authType).Elem().Interface().(Authentication)
+	rv := reflect.New(a.authType)
+	if !a.isPointer {
+		rv = rv.Elem()
+	}
+	v := rv.Interface().(Authentication)
+	v.SetEncrypt(a.encryptSvc)
+	return v
+}
+
+func (a *defaultAuthenticator) SetEncrypt(service encrypt.Service) {
+	a.encryptSvc = service
 }
 
 func (a *defaultAuthenticator) AttachAuthentication(ctx context.Context, resp http.ResponseWriter, req *http.Request) (Authentication, error) {
@@ -120,7 +140,7 @@ type UsernamePasswordAuthentication struct {
 	service encrypt.Service
 }
 
-func (a *UsernamePasswordAuthentication) WithEncrypt(service encrypt.Service) {
+func (a *UsernamePasswordAuthentication) SetEncrypt(service encrypt.Service) {
 	if service == nil {
 		a.service = encrypt.GlobalService()
 	} else {
@@ -140,12 +160,6 @@ func (a *UsernamePasswordAuthentication) ID() string {
 	return fmt.Sprintf("%s@[%s]%s://%s:%d", a.Username, a.Password, a.Protocol, a.Host, a.Port)
 }
 
-func (a *UsernamePasswordAuthentication) Decrypt() (username, password string) {
-	u, _ := a.service.Decrypt([]byte(a.Username))
-	p, _ := a.service.Decrypt([]byte(a.Password))
-	return string(u), string(p)
-}
-
 func (a *UsernamePasswordAuthentication) AttachToRequest(req *http.Request) {
 	panic("Not Implement")
 }
@@ -155,9 +169,25 @@ func (a *UsernamePasswordAuthentication) Refresh(ctx context.Context) error {
 }
 
 func (a *UsernamePasswordAuthentication) AuthMarshal() ([]byte, error) {
-	return json.Marshal(a)
+	v := *a
+	u, _ := a.service.Encrypt([]byte(a.Username))
+	p, _ := a.service.Encrypt([]byte(a.Password))
+	v.Username = base64.StdEncoding.EncodeToString(u)
+	v.Password = base64.StdEncoding.EncodeToString(p)
+	return json.Marshal(v)
 }
 
 func (a *UsernamePasswordAuthentication) AuthUnmarshal(data []byte) error {
-	return json.Unmarshal(data, a)
+	err := json.Unmarshal(data, a)
+	if err != nil {
+		return err
+	}
+	du, _ := base64.StdEncoding.DecodeString(a.Username)
+	dp, _ := base64.StdEncoding.DecodeString(a.Password)
+	u, _ := a.service.Decrypt(du)
+	p, _ := a.service.Decrypt(dp)
+
+	a.Username = string(u)
+	a.Password = string(p)
+	return nil
 }

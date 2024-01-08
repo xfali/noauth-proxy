@@ -15,17 +15,28 @@
  * limitations under the License.
  */
 
-package auth
+package main
 
 import (
-	"context"
-	"github.com/xfali/noauth-proxy/pkg/encrypt"
-	"net/http"
+	"fmt"
+	ex_auth "github.com/xfali/noauth-proxy/examples/auth"
+	"github.com/xfali/noauth-proxy/pkg/app"
+	"github.com/xfali/noauth-proxy/pkg/auth"
+	"github.com/xfali/noauth-proxy/pkg/server"
+	"os"
 )
 
-type Authenticator interface {
-	SetEncrypt(service encrypt.Service)
-	AttachAuthentication(ctx context.Context, resp http.ResponseWriter, req *http.Request) (Authentication, error)
-	ExtractAuthentication(ctx context.Context, req *http.Request) (Authentication, error)
-	Refresh(ctx context.Context, authentication Authentication) error
+func main() {
+	log := func(format string, args ...interface{}) {
+		_, _ = fmt.Fprintf(os.Stderr, format, args...)
+	}
+	h := server.NewHandler(log)
+	auth.Register("test", auth.NewAuthenticator(&ex_auth.ExampleAuthentication{}))
+	go func() {
+		ex_auth.Run(8081)
+	}()
+	app.RunWithServerOpts(log,
+		server.OptAddHandle("/", h.Proxy),
+		server.OptAddHandle("/_switch", h.Switch),
+	)
 }

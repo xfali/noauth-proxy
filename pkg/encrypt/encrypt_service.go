@@ -52,6 +52,17 @@ func (s *defaultService) Decrypt(encryptData []byte) ([]byte, error) {
 	return AesDecrypt(encryptData, s.key)
 }
 
+type NoCrypt struct {
+}
+
+func (s *NoCrypt) Encrypt(originData []byte) ([]byte, error) {
+	return originData, nil
+}
+
+func (s *NoCrypt) Decrypt(encryptData []byte) ([]byte, error) {
+	return encryptData, nil
+}
+
 func Encrypt(originData []byte) ([]byte, error) {
 	return globalService.Encrypt(originData)
 }

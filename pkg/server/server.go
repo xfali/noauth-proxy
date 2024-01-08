@@ -27,7 +27,8 @@ var (
 )
 
 type server struct {
-	svr  *http.Server
+	srv  *http.Server
+	mux  *http.ServeMux
 	host string
 	port int
 	key  string
@@ -36,7 +37,9 @@ type server struct {
 type Opt func(*server)
 
 func NewServer(opts ...Opt) *server {
-	srv := &server{}
+	srv := &server{
+		mux: &http.ServeMux{},
+	}
 	for _, opt := range opts {
 		opt(srv)
 	}
@@ -61,7 +64,7 @@ func OptTlsFile(cert, key string) Opt {
 
 func OptAddHandle(pattern string, handlerFunc http.HandlerFunc) Opt {
 	return func(s *server) {
-		http.HandleFunc(pattern, handlerFunc)
+		s.mux.HandleFunc(pattern, handlerFunc)
 	}
 }
 
@@ -69,22 +72,22 @@ func (s *server) init() {
 	if s.port == 0 {
 		s.port = DefaultPort
 	}
-	s.svr = &http.Server{
+	s.srv = &http.Server{
 		Addr:    fmt.Sprintf("%s:%d", s.host, s.port),
-		Handler: http.DefaultServeMux,
+		Handler: s.mux,
 	}
 }
 
 func (s *server) Start() error {
 	if s.crt != "" {
-		return s.svr.ListenAndServeTLS(s.crt, s.key)
+		return s.srv.ListenAndServeTLS(s.crt, s.key)
 	}
-	return s.svr.ListenAndServe()
+	return s.srv.ListenAndServe()
 }
 
 func (s *server) Close() error {
-	if s.svr != nil {
-		return s.svr.Close()
+	if s.srv != nil {
+		return s.srv.Close()
 	}
 	return nil
 }

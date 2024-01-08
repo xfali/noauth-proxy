@@ -49,6 +49,18 @@ func Run(logger log.LogFunc, args *RunArgs) {
 	wait(logger, svr)
 }
 
+func RunWithServerOpts(logger log.LogFunc, opts ...server.Opt) {
+	svr := server.NewServer(opts...)
+	go func() {
+		err := svr.Start()
+		if err != nil {
+			logger("Start server with args %v failed, exit", err)
+			os.Exit(1)
+		}
+	}()
+	wait(logger, svr)
+}
+
 func wait(logger log.LogFunc, closers ...io.Closer) {
 	ch := make(chan os.Signal, 1)
 	signal.Notify(ch, syscall.SIGHUP, syscall.SIGQUIT, syscall.SIGTERM, syscall.SIGINT)

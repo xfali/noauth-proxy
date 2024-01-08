@@ -63,6 +63,7 @@ func defaultReverseProxyCreator(u *url.URL) *httputil.ReverseProxy {
 func NewHandler(logger log.LogFunc, opts ...HandlerOpt) *handler {
 	ret := &handler{
 		logger:              logger,
+		authMgr:             auth.DefaultAuthenticatorMgr,
 		proxies:             map[string]*httputil.ReverseProxy{},
 		reverseProxyCreator: defaultReverseProxyCreator,
 	}
@@ -90,6 +91,12 @@ func (h *handler) Switch(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Attach Authentication failed: "+err.Error(), http.StatusBadRequest)
 			return
 		}
+		http.SetCookie(w, &http.Cookie{
+			Name:     CookieNameType,
+			Value:    authType,
+			Path:     "/",
+			HttpOnly: true,
+		})
 		err = h.tryCreateProxy(authentication)
 		if err != nil {
 			http.Error(w, "Create Reverse Proxy failed: "+err.Error(), http.StatusBadRequest)

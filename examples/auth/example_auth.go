@@ -19,13 +19,33 @@ package auth
 
 import (
 	"context"
-	"github.com/xfali/noauth-proxy/pkg/encrypt"
+	"crypto/rand"
+	"encoding/base64"
+	"github.com/xfali/noauth-proxy/pkg/auth"
 	"net/http"
 )
 
-type Authenticator interface {
-	SetEncrypt(service encrypt.Service)
-	AttachAuthentication(ctx context.Context, resp http.ResponseWriter, req *http.Request) (Authentication, error)
-	ExtractAuthentication(ctx context.Context, req *http.Request) (Authentication, error)
-	Refresh(ctx context.Context, authentication Authentication) error
+var (
+	token = randomToken(16)
+)
+
+type ExampleAuthentication struct {
+	auth.UsernamePasswordAuthentication
+}
+
+func (a *ExampleAuthentication) AttachToRequest(req *http.Request) {
+	req.Header.Add("Authorization", token)
+}
+
+func (a *ExampleAuthentication) Refresh(ctx context.Context) error {
+	token = randomToken(16)
+	return nil
+}
+
+func randomToken(size int) string {
+	b := make([]byte, size)
+	if _, err := rand.Read(b); err != nil {
+		return "ERROR"
+	}
+	return base64.URLEncoding.EncodeToString(b)
 }

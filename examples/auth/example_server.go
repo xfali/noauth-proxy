@@ -18,14 +18,23 @@
 package auth
 
 import (
-	"context"
-	"github.com/xfali/noauth-proxy/pkg/encrypt"
+	"fmt"
 	"net/http"
 )
 
-type Authenticator interface {
-	SetEncrypt(service encrypt.Service)
-	AttachAuthentication(ctx context.Context, resp http.ResponseWriter, req *http.Request) (Authentication, error)
-	ExtractAuthentication(ctx context.Context, req *http.Request) (Authentication, error)
-	Refresh(ctx context.Context, authentication Authentication) error
+func Run(port int) error {
+	mux := &http.ServeMux{}
+	mux.HandleFunc("/test", func(writer http.ResponseWriter, request *http.Request) {
+		v := request.Header.Get("Authorization")
+		if v == "" || v != token {
+			http.Error(writer, "No Authorization", http.StatusUnauthorized)
+			return
+		}
+		writer.Write([]byte("Hello world"))
+	})
+	srv := http.Server{
+		Addr:    fmt.Sprintf(":%d", port),
+		Handler: mux,
+	}
+	return srv.ListenAndServe()
 }
