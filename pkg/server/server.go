@@ -23,7 +23,11 @@ import (
 )
 
 var (
-	DefaultPort = 8080
+	DefaultPort     = 8080
+	PatternProxy    = "/"
+	PatternPrepare  = "/_prepare"
+	PatternToken    = "/_token"
+	PatternRedirect = "/_redirect"
 )
 
 type server struct {
@@ -72,6 +76,19 @@ func OptRegister(registers ...HttpHandlerRegister) Opt {
 	return func(s *server) {
 		for _, r := range registers {
 			r.RegisterHandler(s.mux.HandleFunc)
+		}
+	}
+}
+
+func OptAutoHandle(o interface{}) Opt {
+	return func(s *server) {
+		if v, ok := o.(ProxyHandler); ok {
+			s.mux.HandleFunc(PatternProxy, v.Proxy)
+			s.mux.HandleFunc(PatternPrepare, v.Prepare)
+		}
+		if v, ok := o.(TokenHandler); ok {
+			s.mux.HandleFunc(PatternToken, v.GenerateToken)
+			s.mux.HandleFunc(PatternRedirect, v.Redirect)
 		}
 	}
 }

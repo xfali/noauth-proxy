@@ -79,7 +79,7 @@ func NewHandler(logger log.LogFunc, opts ...HandlerOpt) *handler {
 	return ret
 }
 
-func (h *handler) Switch(w http.ResponseWriter, r *http.Request) {
+func (h *handler) Prepare(w http.ResponseWriter, r *http.Request) {
 	authType := r.URL.Query().Get("auth_type")
 	if authType == "" {
 		http.Error(w, "Auth type query param is empty", http.StatusBadRequest)

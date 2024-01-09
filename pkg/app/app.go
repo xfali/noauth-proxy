@@ -34,7 +34,7 @@ type RunArgs struct {
 	KeyFile  string
 }
 
-func Run(logger log.LogFunc, args *RunArgs) {
+func Run(logger log.LogFunc, args *RunArgs, closer ...io.Closer) {
 	if args == nil {
 		args = &RunArgs{}
 	}
@@ -46,7 +46,8 @@ func Run(logger log.LogFunc, args *RunArgs) {
 			os.Exit(1)
 		}
 	}()
-	wait(logger, svr)
+	closer = append(closer, svr)
+	Wait(logger, closer...)
 }
 
 func RunWithServerOpts(logger log.LogFunc, opts ...server.Opt) {
@@ -58,10 +59,10 @@ func RunWithServerOpts(logger log.LogFunc, opts ...server.Opt) {
 			os.Exit(1)
 		}
 	}()
-	wait(logger, svr)
+	Wait(logger, svr)
 }
 
-func wait(logger log.LogFunc, closers ...io.Closer) {
+func Wait(logger log.LogFunc, closers ...io.Closer) {
 	ch := make(chan os.Signal, 1)
 	signal.Notify(ch, syscall.SIGHUP, syscall.SIGQUIT, syscall.SIGTERM, syscall.SIGINT)
 	for {
