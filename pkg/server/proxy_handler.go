@@ -34,9 +34,10 @@ import (
 const (
 	CookieNameType = "sso-proxy-type"
 
-	AuthTimeout            = 15 * time.Second
-	DefaultTokenExpireTime = 2 * time.Hour
-	DefaultHttpStatus      = http.StatusOK
+	AuthTimeout               = 15 * time.Second
+	DefaultTokenExpireTime    = 2 * time.Hour
+	DefaultHttpStatus         = http.StatusOK
+	DefaultRedirectHttpStatus = http.StatusSeeOther
 )
 
 type proxy struct {
@@ -53,6 +54,7 @@ type handler struct {
 	verifier            auth.AuthorizationVerifier
 	tokenMgr            token.Manager
 	tokenExpireTime     time.Duration
+	redirectHttpStatus  int
 
 	proxies   map[string]*httputil.ReverseProxy
 	proxyLock sync.RWMutex
@@ -73,6 +75,7 @@ func NewHandler(logger log.LogFunc, opts ...HandlerOpt) *handler {
 		proxies:             map[string]*httputil.ReverseProxy{},
 		reverseProxyCreator: defaultReverseProxyCreator,
 		tokenExpireTime:     DefaultTokenExpireTime,
+		redirectHttpStatus:  DefaultRedirectHttpStatus,
 	}
 	for _, opt := range opts {
 		opt(ret)
@@ -252,7 +255,7 @@ func (h *handler) Redirect(w http.ResponseWriter, r *http.Request) {
 		}
 		req := r.Clone(r.Context())
 		req.AddCookie(cookie)
-		http.Redirect(w, r, redirectUrl, http.StatusSeeOther)
+		http.Redirect(w, r, redirectUrl, h.redirectHttpStatus)
 	} else {
 		http.Error(w, "Redirect Only support GET method: ", http.StatusBadRequest)
 		return
@@ -325,6 +328,12 @@ func (o handleOpts) SetTokenManager(manager token.Manager) HandlerOpt {
 func (o handleOpts) SetTokenExpireTime(tokenExpireTime time.Duration) HandlerOpt {
 	return func(h *handler) {
 		h.tokenExpireTime = tokenExpireTime
+	}
+}
+
+func (o handleOpts) SetRedirectHttpStatus(redirectHttpStatus int) HandlerOpt {
+	return func(h *handler) {
+		h.redirectHttpStatus = redirectHttpStatus
 	}
 }
 
