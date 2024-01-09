@@ -34,34 +34,51 @@ const (
 	CookieNamePayload = "sso-proxy-payload"
 )
 
-type defaultAuthenticator struct {
-	authType   reflect.Type
-	isPointer  bool
-	encryptSvc encrypt.Service
+type defaultAuthenticationFactory struct {
+	authType  reflect.Type
+	isPointer bool
 }
 
-func NewAuthenticator(o Authentication) *defaultAuthenticator {
+func NewAuthenticationFactory(o Authentication) *defaultAuthenticationFactory {
 	t := reflect.TypeOf(o)
 	isPtr := false
 	if t.Kind() == reflect.Ptr {
 		t = t.Elem()
 		isPtr = true
 	}
+	return &defaultAuthenticationFactory{
+		authType:  t,
+		isPointer: isPtr,
+	}
+}
+
+func (f *defaultAuthenticationFactory) NewAuthentication() Authentication {
+	rv := reflect.New(f.authType)
+	if !f.isPointer {
+		rv = rv.Elem()
+	}
+	return rv.Interface().(Authentication)
+}
+
+type defaultAuthenticator struct {
+	factory    AuthenticationFactory
+	refresher  AuthenticationRefresher
+	encryptSvc encrypt.Service
+}
+
+func NewAuthenticator(factory AuthenticationFactory, refresher AuthenticationRefresher) *defaultAuthenticator {
 	ret := &defaultAuthenticator{
-		authType:   t,
-		isPointer:  isPtr,
+		factory:    factory,
 		encryptSvc: encrypt.GlobalService(),
 	}
-
+	if refresher != nil {
+		ret.refresher = refresher
+	}
 	return ret
 }
 
 func (a *defaultAuthenticator) newAuthentication() Authentication {
-	rv := reflect.New(a.authType)
-	if !a.isPointer {
-		rv = rv.Elem()
-	}
-	v := rv.Interface().(Authentication)
+	v := a.factory.NewAuthentication()
 	v.SetEncrypt(a.encryptSvc)
 	return v
 }
@@ -108,9 +125,6 @@ func (a *defaultAuthenticator) AttachAuthentication(ctx context.Context, resp ht
 }
 
 func (a *defaultAuthenticator) ExtractAuthentication(ctx context.Context, req *http.Request) (Authentication, error) {
-	if a.authType == nil {
-		panic("Authentication type unknown ")
-	}
 	auth := a.newAuthentication()
 	c, err := req.Cookie(CookieNamePayload)
 	if err != nil {
@@ -131,6 +145,9 @@ func (a *defaultAuthenticator) ExtractAuthentication(ctx context.Context, req *h
 }
 
 func (a *defaultAuthenticator) Refresh(ctx context.Context, authentication Authentication) error {
+	if a.refresher != nil {
+		a.refresher.Refresh(ctx, authentication)
+	}
 	return authentication.Refresh(ctx)
 }
 

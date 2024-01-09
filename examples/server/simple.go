@@ -34,7 +34,7 @@ func main() {
 	h := server.NewHandler(log,
 		server.HandleOpts.SetTokenManager(token.NewManager(-1)))
 	defer h.Close()
-	auth.Register("test", auth.NewAuthenticator(&ex_auth.ExampleAuthentication{}))
+	auth.Register("test", auth.NewAuthenticator(auth.NewAuthenticationFactory(&ex_auth.ExampleAuthentication{}), nil))
 	go func() {
 		ex_auth.Run(8081)
 	}()

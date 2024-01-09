@@ -38,3 +38,7 @@ type Authentication interface {
 	AttachToRequest(req *http.Request)
 	Refresh(ctx context.Context) error
 }
+
+type AuthenticationRefresher interface {
+	Refresh(ctx context.Context, auth Authentication) error
+}

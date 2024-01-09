@@ -17,16 +17,6 @@
 
 package auth
 
-import (
-	"context"
-	"github.com/xfali/noauth-proxy/pkg/encrypt"
-	"net/http"
-)
-
-type Authenticator interface {
-	SetEncrypt(service encrypt.Service)
-	ReadAuthentication(ctx context.Context, req *http.Request) (Authentication, error)
-	AttachAuthentication(ctx context.Context, resp http.ResponseWriter, auth Authentication) error
-	ExtractAuthentication(ctx context.Context, req *http.Request) (Authentication, error)
-	AuthenticationRefresher
+type AuthenticationFactory interface {
+	NewAuthentication() Authentication
 }
