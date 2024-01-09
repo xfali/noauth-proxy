@@ -36,6 +36,7 @@ const (
 
 	AuthTimeout            = 15 * time.Second
 	DefaultTokenExpireTime = 2 * time.Hour
+	DefaultHttpStatus      = http.StatusOK
 )
 
 type proxy struct {
@@ -251,7 +252,7 @@ func (h *handler) Redirect(w http.ResponseWriter, r *http.Request) {
 		}
 		req := r.Clone(r.Context())
 		req.AddCookie(cookie)
-		http.Redirect(w, r, redirectUrl, http.StatusOK)
+		http.Redirect(w, r, redirectUrl, http.StatusSeeOther)
 	} else {
 		http.Error(w, "Redirect Only support GET method: ", http.StatusBadRequest)
 		return
@@ -288,7 +289,7 @@ func (h *handler) tryCreateProxy(authentication auth.Authentication) error {
 
 	p := h.reverseProxyCreator(u)
 
-	h.proxies[authentication.ID()] = p
+	h.proxies[key] = p
 	return nil
 }
 
@@ -336,6 +337,7 @@ type responseWriter struct {
 func newResponseWriter(w http.ResponseWriter) *responseWriter {
 	ret := responseWriter{}
 	ret.ResponseWriter = w
+	ret.code = DefaultHttpStatus
 	return &ret
 }
 
@@ -354,6 +356,7 @@ func (r *responseWriter) WriteString(d string) (int, error) {
 
 func (r *responseWriter) reset() {
 	r.buf.Reset()
+	r.code = DefaultHttpStatus
 }
 
 func (r *responseWriter) flush() error {
