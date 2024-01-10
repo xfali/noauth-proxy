@@ -30,34 +30,53 @@ import (
 	"reflect"
 )
 
-const (
+var (
 	CookieNamePayload = "sso-proxy-payload"
 )
 
 type defaultAuthenticationFactory struct {
-	authType  reflect.Type
-	isPointer bool
+	authType      reflect.Type
+	isPointer     bool
+	authElemType  reflect.Type
+	elemIsPointer bool
 }
 
-func NewAuthenticationFactory(o Authentication) *defaultAuthenticationFactory {
+func NewAuthenticationFactory(o Authentication, e AuthenticationElements) *defaultAuthenticationFactory {
 	t := reflect.TypeOf(o)
 	isPtr := false
 	if t.Kind() == reflect.Ptr {
 		t = t.Elem()
 		isPtr = true
 	}
-	return &defaultAuthenticationFactory{
+	ret := &defaultAuthenticationFactory{
 		authType:  t,
 		isPointer: isPtr,
 	}
+	t = reflect.TypeOf(e)
+	isPtr = false
+	if t.Kind() == reflect.Ptr {
+		t = t.Elem()
+		isPtr = true
+	}
+	ret.authElemType = t
+	ret.elemIsPointer = isPtr
+	return ret
 }
 
-func (f *defaultAuthenticationFactory) NewAuthentication() Authentication {
+func (f *defaultAuthenticationFactory) NewAuthentication(req *http.Request) Authentication {
 	rv := reflect.New(f.authType)
 	if !f.isPointer {
 		rv = rv.Elem()
 	}
 	return rv.Interface().(Authentication)
+}
+
+func (f *defaultAuthenticationFactory) NewAuthenticationElements(req *http.Request) AuthenticationElements {
+	rv := reflect.New(f.authElemType)
+	if !f.elemIsPointer {
+		rv = rv.Elem()
+	}
+	return rv.Interface().(AuthenticationElements)
 }
 
 type defaultAuthenticator struct {
@@ -77,8 +96,14 @@ func NewAuthenticator(factory AuthenticationFactory, refresher AuthenticationRef
 	return ret
 }
 
-func (a *defaultAuthenticator) newAuthentication() Authentication {
-	v := a.factory.NewAuthentication()
+func (a *defaultAuthenticator) newAuthentication(req *http.Request) Authentication {
+	v := a.factory.NewAuthentication(req)
+	v.SetEncrypt(a.encryptSvc)
+	return v
+}
+
+func (a *defaultAuthenticator) newAuthenticationElements(req *http.Request) AuthenticationElements {
+	v := a.factory.NewAuthenticationElements(req)
 	v.SetEncrypt(a.encryptSvc)
 	return v
 }
@@ -96,7 +121,7 @@ func (a *defaultAuthenticator) ReadAuthentication(ctx context.Context, req *http
 	if err != nil {
 		return nil, err
 	}
-	auth := a.newAuthentication()
+	auth := a.newAuthentication(req)
 	if m, ok := auth.(Unmarshaler); ok {
 		err = m.AuthUnmarshal(buf.Bytes())
 		if err != nil {
@@ -106,8 +131,12 @@ func (a *defaultAuthenticator) ReadAuthentication(ctx context.Context, req *http
 	return auth, nil
 }
 
-func (a *defaultAuthenticator) AttachAuthentication(ctx context.Context, resp http.ResponseWriter, auth Authentication) error {
-	if m, ok := auth.(Marshaler); ok {
+func (a *defaultAuthenticator) AttachAuthenticationElement(ctx context.Context, resp http.ResponseWriter, auth Authentication) error {
+	authElem, err := a.refresher.CreateAuthenticationElements(ctx, auth)
+	if err != nil {
+		return err
+	}
+	if m, ok := authElem.(Marshaler); ok {
 		d, err := m.AuthMarshal()
 		if err != nil {
 			return err
@@ -124,8 +153,8 @@ func (a *defaultAuthenticator) AttachAuthentication(ctx context.Context, resp ht
 	return nil
 }
 
-func (a *defaultAuthenticator) ExtractAuthentication(ctx context.Context, req *http.Request) (Authentication, error) {
-	auth := a.newAuthentication()
+func (a *defaultAuthenticator) ExtractAuthenticationElement(ctx context.Context, req *http.Request) (AuthenticationElements, error) {
+	auth := a.newAuthenticationElements(req)
 	c, err := req.Cookie(CookieNamePayload)
 	if err != nil {
 		return nil, err
@@ -139,16 +168,23 @@ func (a *defaultAuthenticator) ExtractAuthentication(ctx context.Context, req *h
 		if err != nil {
 			return nil, err
 		}
-		return m.(Authentication), nil
+		return m.(AuthenticationElements), nil
 	}
-	return nil, errors.New("Not support Authentication type ")
+	return nil, errors.New("Not support AuthenticationElements type ")
 }
 
-func (a *defaultAuthenticator) Refresh(ctx context.Context, authentication Authentication) error {
+func (a *defaultAuthenticator) Refresh(ctx context.Context, authentication AuthenticationElements) error {
 	if a.refresher != nil {
-		a.refresher.Refresh(ctx, authentication)
+		return a.refresher.Refresh(ctx, authentication)
 	}
-	return authentication.Refresh(ctx)
+	return errors.New("Authentication Refresher not set ")
+}
+
+func (a *defaultAuthenticator) CreateAuthenticationElements(ctx context.Context, auth Authentication) (AuthenticationElements, error) {
+	if a.refresher != nil {
+		return a.refresher.CreateAuthenticationElements(ctx, auth)
+	}
+	return nil, errors.New("Authentication Refresher not set ")
 }
 
 type UsernamePasswordAuthentication struct {
@@ -177,16 +213,8 @@ func (a *UsernamePasswordAuthentication) PassAddress() string {
 	return fmt.Sprintf("%s://%s:%d", a.Protocol, a.Host, a.Port)
 }
 
-func (a *UsernamePasswordAuthentication) ID() string {
+func (a *UsernamePasswordAuthentication) Key() string {
 	return fmt.Sprintf("%s@[%s]%s://%s:%d", a.Username, a.Password, a.Protocol, a.Host, a.Port)
-}
-
-func (a *UsernamePasswordAuthentication) AttachToRequest(req *http.Request) {
-	panic("Not Implement")
-}
-
-func (a *UsernamePasswordAuthentication) Refresh(ctx context.Context) error {
-	panic("Not Implement")
 }
 
 func (a *UsernamePasswordAuthentication) AuthMarshal() ([]byte, error) {

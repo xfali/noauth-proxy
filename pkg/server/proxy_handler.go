@@ -32,12 +32,14 @@ import (
 )
 
 const (
-	CookieNameType = "sso-proxy-type"
-
 	AuthTimeout               = 15 * time.Second
 	DefaultTokenExpireTime    = 2 * time.Hour
 	DefaultHttpStatus         = http.StatusOK
 	DefaultRedirectHttpStatus = http.StatusSeeOther
+)
+
+var (
+	CookieNameType = "sso-proxy-type"
 )
 
 type proxy struct {
@@ -101,7 +103,7 @@ func (h *handler) Prepare(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Read Authentication failed: "+err.Error(), http.StatusBadRequest)
 			return
 		}
-		err = authenticator.AttachAuthentication(ctx, w, authentication)
+		err = authenticator.AttachAuthenticationElement(ctx, w, authentication)
 		if err != nil {
 			http.Error(w, "Attach Authentication failed: "+err.Error(), http.StatusBadRequest)
 			return
@@ -147,7 +149,7 @@ func (h *handler) Proxy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	auth, err := authenticator.ExtractAuthentication(ctx, r)
+	auth, err := authenticator.ExtractAuthenticationElement(ctx, r)
 	if err != nil {
 		w.WriteHeader(http.StatusBadGateway)
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -156,6 +158,12 @@ func (h *handler) Proxy(w http.ResponseWriter, r *http.Request) {
 	}
 
 	rp := h.getProxy(auth)
+	if rp == nil {
+		w.WriteHeader(http.StatusBadGateway)
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = w.Write([]byte(fmt.Sprintf(BadGatewayHtml, "Upstream not found")))
+		return
+	}
 	req := r.Clone(r.Context())
 	resp := newResponseWriter(w)
 	defer resp.flush()
@@ -235,7 +243,7 @@ func (h *handler) Redirect(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		err = authenticator.AttachAuthentication(ctx, w, authentication)
+		err = authenticator.AttachAuthenticationElement(ctx, w, authentication)
 		if err != nil {
 			http.Error(w, "Attach Authentication failed: "+err.Error(), http.StatusBadRequest)
 			return
@@ -269,18 +277,18 @@ func (h *handler) Close() error {
 	return nil
 }
 
-func (h *handler) getProxy(authentication auth.Authentication) *httputil.ReverseProxy {
+func (h *handler) getProxy(authentication auth.AuthenticationElements) *httputil.ReverseProxy {
 	h.proxyLock.RLock()
 	defer h.proxyLock.RUnlock()
 
-	return h.proxies[authentication.ID()]
+	return h.proxies[authentication.Key()]
 }
 
 func (h *handler) tryCreateProxy(authentication auth.Authentication) error {
 	h.proxyLock.Lock()
 	defer h.proxyLock.Unlock()
 
-	key := authentication.ID()
+	key := authentication.Key()
 	if v := h.proxies[key]; v != nil {
 		return nil
 	}

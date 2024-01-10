@@ -32,13 +32,18 @@ type Unmarshaler interface {
 }
 
 type Authentication interface {
+	Key() string
 	SetEncrypt(service encrypt.Service)
-	ID() string
 	PassAddress() string
+}
+
+type AuthenticationElements interface {
+	Key() string
+	SetEncrypt(service encrypt.Service)
 	AttachToRequest(req *http.Request)
-	Refresh(ctx context.Context) error
 }
 
 type AuthenticationRefresher interface {
-	Refresh(ctx context.Context, auth Authentication) error
+	Refresh(ctx context.Context, auth AuthenticationElements) error
+	CreateAuthenticationElements(ctx context.Context, auth Authentication) (AuthenticationElements, error)
 }

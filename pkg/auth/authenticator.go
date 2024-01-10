@@ -26,7 +26,7 @@ import (
 type Authenticator interface {
 	SetEncrypt(service encrypt.Service)
 	ReadAuthentication(ctx context.Context, req *http.Request) (Authentication, error)
-	AttachAuthentication(ctx context.Context, resp http.ResponseWriter, auth Authentication) error
-	ExtractAuthentication(ctx context.Context, req *http.Request) (Authentication, error)
+	AttachAuthenticationElement(ctx context.Context, resp http.ResponseWriter, auth Authentication) error
+	ExtractAuthenticationElement(ctx context.Context, req *http.Request) (AuthenticationElements, error)
 	AuthenticationRefresher
 }

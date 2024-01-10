@@ -18,6 +18,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	ex_auth "github.com/xfali/noauth-proxy/examples/auth"
 	"github.com/xfali/noauth-proxy/pkg/app"
@@ -34,7 +35,18 @@ func main() {
 	h := server.NewHandler(log,
 		server.HandleOpts.SetTokenManager(token.NewManager(-1)))
 	defer h.Close()
-	auth.Register("test", auth.NewAuthenticator(auth.NewAuthenticationFactory(&ex_auth.ExampleAuthentication{}), nil))
+	auth.Register("test", auth.NewAuthenticator(
+		auth.NewAuthenticationFactory(&auth.UsernamePasswordAuthentication{}, &ex_auth.ExampleAuthenticationElement{}),
+		auth.FunctionRefresher{
+			RefreshFunction: func(ctx context.Context, auth auth.AuthenticationElements) error {
+				return ex_auth.Refresh(ctx)
+			},
+			CreateAuthenticationElementsFunction: func(ctx context.Context, auth auth.Authentication) (auth.AuthenticationElements, error) {
+				return &ex_auth.ExampleAuthenticationElement{
+					AuthKey: auth.Key(),
+				}, nil
+			},
+		}))
 	go func() {
 		ex_auth.Run(8081)
 	}()

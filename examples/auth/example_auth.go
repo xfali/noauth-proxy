@@ -19,7 +19,8 @@ package auth
 
 import (
 	"context"
-	"github.com/xfali/noauth-proxy/pkg/auth"
+	"encoding/json"
+	"github.com/xfali/noauth-proxy/pkg/encrypt"
 	token2 "github.com/xfali/noauth-proxy/pkg/token"
 	"net/http"
 )
@@ -28,15 +29,31 @@ var (
 	token = token2.RandomToken(16)
 )
 
-type ExampleAuthentication struct {
-	auth.UsernamePasswordAuthentication
+type ExampleAuthenticationElement struct {
+	AuthKey string `json:"key"`
 }
 
-func (a *ExampleAuthentication) AttachToRequest(req *http.Request) {
+func (a *ExampleAuthenticationElement) AuthMarshal() ([]byte, error) {
+	return json.Marshal(a)
+}
+
+func (a *ExampleAuthenticationElement) AuthUnmarshal(data []byte) error {
+	return json.Unmarshal(data, a)
+}
+
+func (a *ExampleAuthenticationElement) Key() string {
+	return a.AuthKey
+}
+
+func (a *ExampleAuthenticationElement) AttachToRequest(req *http.Request) {
 	req.Header.Add("Authorization", token)
 }
 
-func (a *ExampleAuthentication) Refresh(ctx context.Context) error {
+func Refresh(ctx context.Context) error {
 	token = token2.RandomToken(16)
 	return nil
+}
+
+func (a *ExampleAuthenticationElement) SetEncrypt(service encrypt.Service) {
+
 }

@@ -17,11 +17,17 @@
 
 package auth
 
-import (
-	"net/http"
-)
+import "context"
 
-type AuthenticationFactory interface {
-	NewAuthentication(req *http.Request) Authentication
-	NewAuthenticationElements(req *http.Request) AuthenticationElements
+type FunctionRefresher struct {
+	RefreshFunction                      func(ctx context.Context, auth AuthenticationElements) error
+	CreateAuthenticationElementsFunction func(ctx context.Context, auth Authentication) (AuthenticationElements, error)
+}
+
+func (f FunctionRefresher) Refresh(ctx context.Context, auth AuthenticationElements) error {
+	return f.RefreshFunction(ctx, auth)
+}
+
+func (f FunctionRefresher) CreateAuthenticationElements(ctx context.Context, auth Authentication) (AuthenticationElements, error) {
+	return f.CreateAuthenticationElementsFunction(ctx, auth)
 }
