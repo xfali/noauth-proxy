@@ -19,7 +19,6 @@ package auth
 
 import (
 	"context"
-	"encoding/json"
 	"github.com/xfali/noauth-proxy/pkg/encrypt"
 	token2 "github.com/xfali/noauth-proxy/pkg/token"
 	"net/http"
@@ -33,13 +32,13 @@ type ExampleAuthenticationElement struct {
 	AuthKey string `json:"key"`
 }
 
-func (a *ExampleAuthenticationElement) AuthMarshal() ([]byte, error) {
-	return json.Marshal(a)
-}
-
-func (a *ExampleAuthenticationElement) AuthUnmarshal(data []byte) error {
-	return json.Unmarshal(data, a)
-}
+//func (a *ExampleAuthenticationElement) AuthMarshal() ([]byte, error) {
+//	return json.Marshal(a)
+//}
+//
+//func (a *ExampleAuthenticationElement) AuthUnmarshal(data []byte) error {
+//	return json.Unmarshal(data, a)
+//}
 
 func (a *ExampleAuthenticationElement) Key() string {
 	return a.AuthKey

@@ -127,6 +127,11 @@ func (a *defaultAuthenticator) ReadAuthentication(ctx context.Context, req *http
 		if err != nil {
 			return nil, err
 		}
+	} else {
+		err = json.Unmarshal(buf.Bytes(), auth)
+		if err != nil {
+			return nil, err
+		}
 	}
 	return auth, nil
 }
@@ -136,20 +141,26 @@ func (a *defaultAuthenticator) AttachAuthenticationElement(ctx context.Context, 
 	if err != nil {
 		return err
 	}
+	var d []byte
 	if m, ok := authElem.(Marshaler); ok {
-		d, err := m.AuthMarshal()
+		d, err = m.AuthMarshal()
 		if err != nil {
 			return err
 		}
-		cookieData := base64.StdEncoding.EncodeToString(d)
-		cookie := &http.Cookie{
-			Name:     CookieNamePayload,
-			Value:    cookieData,
-			Path:     "/",
-			HttpOnly: true,
+	} else {
+		d, err = json.Marshal(authElem)
+		if err != nil {
+			return err
 		}
-		http.SetCookie(resp, cookie)
 	}
+	cookieData := base64.StdEncoding.EncodeToString(d)
+	cookie := &http.Cookie{
+		Name:     CookieNamePayload,
+		Value:    cookieData,
+		Path:     "/",
+		HttpOnly: true,
+	}
+	http.SetCookie(resp, cookie)
 	return nil
 }
 
@@ -169,8 +180,14 @@ func (a *defaultAuthenticator) ExtractAuthenticationElement(ctx context.Context,
 			return nil, err
 		}
 		return m.(AuthenticationElements), nil
+	} else {
+		err = json.Unmarshal(v, auth)
+		if err != nil {
+			return nil, err
+		}
+		return auth, nil
 	}
-	return nil, errors.New("Not support AuthenticationElements type ")
+	//return nil, errors.New("Not support AuthenticationElements type ")
 }
 
 func (a *defaultAuthenticator) Refresh(ctx context.Context, authentication AuthenticationElements) error {
