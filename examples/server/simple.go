@@ -19,6 +19,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	ex_auth "github.com/xfali/noauth-proxy/examples/auth"
 	"github.com/xfali/noauth-proxy/pkg/app"
@@ -39,9 +40,10 @@ func main() {
 		auth.NewAuthenticationFactory(&auth.UsernamePasswordAuthentication{}, &ex_auth.ExampleAuthenticationElement{}),
 		auth.FunctionRefresher{
 			RefreshFunction: func(ctx context.Context, auth auth.AuthenticationElements) error {
-				return ex_auth.Refresh(ctx)
+				return errors.New("Not support ")
 			},
 			CreateAuthenticationElementsFunction: func(ctx context.Context, auth auth.Authentication) (auth.AuthenticationElements, error) {
+				_ = ex_auth.Refresh(ctx)
 				return &ex_auth.ExampleAuthenticationElement{
 					AuthKey: auth.Key(),
 				}, nil

@@ -35,11 +35,22 @@ type tokenData struct {
 	expireTime time.Time
 }
 
+type Keyable interface {
+	Key() string
+}
+
+type Filter interface {
+	Filter(k Keyable) (Token, bool)
+	Update(k Keyable, token Token)
+	Remove(k Keyable)
+}
+
 type defaultManager struct {
 	policy    RevocationPolicy
 	tokens    map[Token]*tokenData
 	tokenLock sync.RWMutex
 
+	filter         Filter
 	maxRetryTimes  int
 	tokenGenerator TokenGenerator
 	purgeInterval  time.Duration
@@ -78,15 +89,34 @@ func (m *defaultManager) Generate(ctx context.Context, data interface{}, expire 
 	m.tokenLock.Lock()
 	defer m.tokenLock.Unlock()
 
+	keyable := false
+	if m.filter != nil {
+		if k, ok := data.(Keyable); ok {
+			keyable = true
+			if t, have := m.filter.Filter(k); have {
+				if _, hh := m.tokens[t]; !hh {
+					m.filter.Remove(k)
+				} else {
+					return t, nil
+				}
+			}
+		}
+	}
+
 	for i := 0; i < m.maxRetryTimes; i++ {
 		token := m.tokenGenerator(data)
 		if _, ok := m.tokens[token]; !ok {
 			if s, ok := data.(Setter); ok {
-				s.Set(Token(token))
+				s.Set(token)
 			}
 			m.tokens[token] = &tokenData{
 				expireTime: expire,
 				data:       data,
+			}
+			if m.filter != nil {
+				if keyable {
+					m.filter.Update(data.(Keyable), token)
+				}
 			}
 			return Token(token), nil
 		}
@@ -208,4 +238,48 @@ func (o managerOpts) GenerateTokenMaxRetryTime(t int) defaultManagerOpt {
 	return func(manager *defaultManager) {
 		manager.maxRetryTimes = t
 	}
+}
+
+func (o managerOpts) Filter(filter Filter) defaultManagerOpt {
+	return func(manager *defaultManager) {
+		manager.filter = filter
+	}
+}
+
+type DummyFilter struct {
+}
+
+func (f DummyFilter) Filter(k Keyable) (Token, bool) {
+	return "", false
+}
+
+func (f DummyFilter) Update(k Keyable, token Token) {
+
+}
+
+func (f DummyFilter) Remove(k Keyable) {
+
+}
+
+type MapFilter struct {
+	data map[string]Token
+}
+
+func NewMapFilter() *MapFilter {
+	return &MapFilter{
+		data: map[string]Token{},
+	}
+}
+
+func (f *MapFilter) Filter(k Keyable) (Token, bool) {
+	v, ok := f.data[k.Key()]
+	return v, ok
+}
+
+func (f *MapFilter) Update(k Keyable, token Token) {
+	f.data[k.Key()] = token
+}
+
+func (f *MapFilter) Remove(k Keyable) {
+	delete(f.data, k.Key())
 }

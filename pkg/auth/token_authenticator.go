@@ -49,7 +49,7 @@ type tokenAuthData struct {
 func NewAuthenticator(factory AuthenticationFactory, refresher AuthenticationRefresher, opts ...tokenAuthenticatorOpt) *tokenAuthenticator {
 	ret := &tokenAuthenticator{
 		factory:    factory,
-		manager:    token.NewManager(),
+		manager:    token.NewManager(token.ManagerOpts.Filter(token.NewMapFilter())),
 		encryptSvc: encrypt.GlobalService(),
 	}
 	if refresher != nil {
@@ -181,6 +181,10 @@ func (a *tokenAuthenticator) CreateAuthenticationElements(ctx context.Context, a
 		return a.refresher.CreateAuthenticationElements(ctx, auth)
 	}
 	return nil, errors.New("Authentication Refresher not set ")
+}
+
+func (d *tokenAuthData) Key() string {
+	return d.auth.Key()
 }
 
 func (d *tokenAuthData) Set(t token.Token) {

@@ -24,7 +24,13 @@ import (
 
 func Run(port int) error {
 	mux := &http.ServeMux{}
+	first := true
 	mux.HandleFunc("/test", func(writer http.ResponseWriter, request *http.Request) {
+		if first {
+			first = false
+			http.Error(writer, "No Authorization", http.StatusUnauthorized)
+			return
+		}
 		v := request.Header.Get("Authorization")
 		if v == "" || v != token {
 			http.Error(writer, "No Authorization", http.StatusUnauthorized)
