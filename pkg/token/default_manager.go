@@ -20,7 +20,6 @@ package token
 import (
 	"context"
 	"errors"
-	"github.com/xfali/noauth-proxy/pkg/auth"
 	"github.com/xfali/noauth-proxy/pkg/clock"
 	"sync"
 	"time"
@@ -31,8 +30,8 @@ const (
 )
 
 type tokenData struct {
-	authentication auth.Authentication
-	expireTime     time.Time
+	data       interface{}
+	expireTime time.Time
 }
 
 type defaultManager struct {
@@ -58,7 +57,7 @@ func (m *defaultManager) SetRevocationPolicy(policy RevocationPolicy) {
 	m.policy = policy
 }
 
-func (m *defaultManager) Generate(ctx context.Context, authentication auth.Authentication, expire time.Time) (Token, error) {
+func (m *defaultManager) Generate(ctx context.Context, data interface{}, expire time.Time) (Token, error) {
 	m.tokenLock.Lock()
 	defer m.tokenLock.Unlock()
 
@@ -66,15 +65,15 @@ func (m *defaultManager) Generate(ctx context.Context, authentication auth.Authe
 		token := RandomToken(32)
 		if _, ok := m.tokens[token]; !ok {
 			m.tokens[token] = &tokenData{
-				expireTime:     expire,
-				authentication: authentication,
+				expireTime: expire,
+				data:       data,
 			}
 			return Token(token), nil
 		}
 	}
 }
 
-func (m *defaultManager) GetAuthentication(ctx context.Context, token Token) (auth.Authentication, error) {
+func (m *defaultManager) Get(ctx context.Context, token Token) (interface{}, error) {
 	m.tokenLock.Lock()
 	defer m.tokenLock.Unlock()
 
@@ -83,7 +82,7 @@ func (m *defaultManager) GetAuthentication(ctx context.Context, token Token) (au
 		if m.policy != nil && m.policy.OnTouch(token) {
 			delete(m.tokens, t)
 		}
-		return v.authentication, nil
+		return v.data, nil
 	}
 	return nil, errors.New("Invalid Token ")
 }

@@ -229,11 +229,12 @@ func (h *handler) Redirect(w http.ResponseWriter, r *http.Request) {
 		redirectUrl, _ = url.QueryUnescape(redirectUrl)
 
 		ctx := context.Background()
-		authentication, err := h.tokenMgr.GetAuthentication(ctx, token.Token(authToken))
+		data, err := h.tokenMgr.Get(ctx, token.Token(authToken))
 		if err != nil {
 			http.Error(w, "GetAuthentication failed: "+err.Error(), http.StatusBadRequest)
 			return
 		}
+		authentication := data.(auth.Authentication)
 		authenticator, have := h.authMgr.GetAuthenticator(ctx, authType)
 		if !have {
 			http.Error(w, "Auth type not support: "+authType, http.StatusBadRequest)

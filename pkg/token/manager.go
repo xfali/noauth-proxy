@@ -19,13 +19,12 @@ package token
 
 import (
 	"context"
-	"github.com/xfali/noauth-proxy/pkg/auth"
 	"time"
 )
 
 type Manager interface {
 	SetRevocationPolicy(policy RevocationPolicy)
-	Generate(ctx context.Context, authentication auth.Authentication, expire time.Time) (Token, error)
-	GetAuthentication(ctx context.Context, token Token) (auth.Authentication, error)
+	Generate(ctx context.Context, data interface{}, expire time.Time) (Token, error)
+	Get(ctx context.Context, token Token) (interface{}, error)
 	Close() error
 }
