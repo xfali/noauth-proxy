@@ -46,14 +46,17 @@ type tokenAuthData struct {
 	authElem AuthenticationElements
 }
 
-func NewAuthenticator(factory AuthenticationFactory, refresher AuthenticationRefresher) *tokenAuthenticator {
+func NewAuthenticator(factory AuthenticationFactory, refresher AuthenticationRefresher, opts ...tokenAuthenticatorOpt) *tokenAuthenticator {
 	ret := &tokenAuthenticator{
 		factory:    factory,
-		manager:    token.NewManager(-1),
+		manager:    token.NewManager(),
 		encryptSvc: encrypt.GlobalService(),
 	}
 	if refresher != nil {
 		ret.refresher = refresher
+	}
+	for _, opt := range opts {
+		opt(ret)
 	}
 	return ret
 }

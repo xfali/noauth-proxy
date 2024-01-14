@@ -37,18 +37,35 @@ type tokenData struct {
 
 type defaultManager struct {
 	policy    RevocationPolicy
-	tokens    map[string]*tokenData
+	tokens    map[Token]*tokenData
 	tokenLock sync.RWMutex
-	stopCh    chan struct{}
+
+	maxRetryTimes  int
+	tokenGenerator TokenGenerator
+	purgeInterval  time.Duration
+	stopCh         chan struct{}
 }
 
-func NewManager(purgeInterval time.Duration) *defaultManager {
+type defaultManagerOpt func(*defaultManager)
+type TokenGenerator func(data interface{}) Token
+
+func defaultTokenGenerator(data interface{}) Token {
+	return FromString(RandomToken(32))
+}
+
+func NewManager(opts ...defaultManagerOpt) *defaultManager {
 	ret := &defaultManager{
-		tokens: map[string]*tokenData{},
-		stopCh: make(chan struct{}),
+		tokens:         map[Token]*tokenData{},
+		stopCh:         make(chan struct{}),
+		tokenGenerator: defaultTokenGenerator,
+		maxRetryTimes:  3,
+		purgeInterval:  0,
 	}
-	if purgeInterval > 0 {
-		go ret.purgeLoop(purgeInterval)
+	for _, opt := range opts {
+		opt(ret)
+	}
+	if ret.purgeInterval > 0 {
+		go ret.purgeLoop(ret.purgeInterval)
 	}
 	return ret
 }
@@ -61,8 +78,8 @@ func (m *defaultManager) Generate(ctx context.Context, data interface{}, expire 
 	m.tokenLock.Lock()
 	defer m.tokenLock.Unlock()
 
-	for {
-		token := RandomToken(32)
+	for i := 0; i < m.maxRetryTimes; i++ {
+		token := m.tokenGenerator(data)
 		if _, ok := m.tokens[token]; !ok {
 			if s, ok := data.(Setter); ok {
 				s.Set(Token(token))
@@ -74,13 +91,14 @@ func (m *defaultManager) Generate(ctx context.Context, data interface{}, expire 
 			return Token(token), nil
 		}
 	}
+	return "", fmt.Errorf("Cannot generate token in %d times ", m.maxRetryTimes)
 }
 
 func (m *defaultManager) Set(ctx context.Context, token Token, data interface{}, expire time.Time, flag SetFlag) error {
 	m.tokenLock.Lock()
 	defer m.tokenLock.Unlock()
 
-	_, have := m.tokens[token.String()]
+	_, have := m.tokens[token]
 	if have {
 		if flag&SetFlagNotExist != 0 {
 			return fmt.Errorf("Flag is SetFlagNotExist but value found ")
@@ -94,7 +112,7 @@ func (m *defaultManager) Set(ctx context.Context, token Token, data interface{},
 	if s, ok := data.(Setter); ok {
 		s.Set(token)
 	}
-	m.tokens[token.String()] = &tokenData{
+	m.tokens[token] = &tokenData{
 		expireTime: expire,
 		data:       data,
 	}
@@ -105,8 +123,7 @@ func (m *defaultManager) Get(ctx context.Context, token Token) (interface{}, err
 	m.tokenLock.Lock()
 	defer m.tokenLock.Unlock()
 
-	t := string(token)
-	if v, ok := m.tokens[t]; ok {
+	if v, ok := m.tokens[token]; ok {
 		if !v.expireTime.IsZero() {
 			now := clock.Now()
 			if m.processExpire(now, token, v) {
@@ -115,7 +132,7 @@ func (m *defaultManager) Get(ctx context.Context, token Token) (interface{}, err
 		}
 
 		if m.policy != nil && m.policy.OnTouch(token) {
-			delete(m.tokens, t)
+			delete(m.tokens, token)
 		}
 		return v.data, nil
 	}
@@ -154,7 +171,7 @@ func (m *defaultManager) processExpire(now time.Time, token Token, data *tokenDa
 		if m.policy != nil && !m.policy.OnExpire(token) {
 			return true
 		}
-		delete(m.tokens, string(token))
+		delete(m.tokens, token)
 		return true
 	}
 	return false
@@ -167,5 +184,28 @@ func (m *defaultManager) doPurge() {
 
 	for k, v := range m.tokens {
 		_ = m.processExpire(now, Token(k), v)
+	}
+}
+
+type managerOpts struct {
+}
+
+var ManagerOpts managerOpts
+
+func (o managerOpts) PurgeInterval(t time.Duration) defaultManagerOpt {
+	return func(manager *defaultManager) {
+		manager.purgeInterval = t
+	}
+}
+
+func (o managerOpts) TokenGenerator(generator TokenGenerator) defaultManagerOpt {
+	return func(manager *defaultManager) {
+		manager.tokenGenerator = generator
+	}
+}
+
+func (o managerOpts) GenerateTokenMaxRetryTime(t int) defaultManagerOpt {
+	return func(manager *defaultManager) {
+		manager.maxRetryTimes = t
 	}
 }
