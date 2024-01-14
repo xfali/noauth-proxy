@@ -18,7 +18,6 @@
 package server
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"github.com/xfali/noauth-proxy/pkg/auth"
@@ -48,10 +47,12 @@ type proxy struct {
 }
 
 type HandlerOpt func(*handler)
+type ResponseWrapCreator func() ResponseWriterWrapper
 
 type handler struct {
 	logger              log.LogFunc
 	reverseProxyCreator reverseProxyCreator
+	responseWrapCreator ResponseWrapCreator
 	authMgr             auth.AuthenticatorManager
 	verifier            auth.AuthorizationVerifier
 	tokenMgr            token.Manager
@@ -64,18 +65,13 @@ type handler struct {
 
 type reverseProxyCreator func(u *url.URL) *httputil.ReverseProxy
 
-func defaultReverseProxyCreator(u *url.URL) *httputil.ReverseProxy {
-	p := httputil.NewSingleHostReverseProxy(u)
-	p.Transport = http.DefaultTransport
-	return p
-}
-
 func NewHandler(logger log.LogFunc, opts ...HandlerOpt) *handler {
 	ret := &handler{
 		logger:              logger,
 		authMgr:             auth.DefaultAuthenticatorMgr,
 		proxies:             map[string]*httputil.ReverseProxy{},
-		reverseProxyCreator: defaultReverseProxyCreator,
+		reverseProxyCreator: DefaultReverseProxyCreator,
+		responseWrapCreator: DefaultResponseWriter,
 		tokenExpireTime:     DefaultTokenExpireTime,
 		redirectHttpStatus:  DefaultRedirectHttpStatus,
 	}
@@ -165,18 +161,19 @@ func (h *handler) Proxy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req := r.Clone(r.Context())
-	resp := newResponseWriter(w)
-	defer resp.flush()
+	resp := h.responseWrapCreator()
+	defer resp.DoFlush()
+	resp.Reset(w)
 
 	auth.AttachToRequest(req)
 	rp.ServeHTTP(resp, req)
-	if resp.code == http.StatusUnauthorized {
+	if resp.HttpStatus() == http.StatusUnauthorized {
 		err = authenticator.Refresh(ctx, auth)
 		if err != nil {
 			h.logger("Refresh Authentication failed: %v \n", err)
 			return
 		}
-		resp.reset()
+		resp.Reset(w)
 		auth.AttachToRequest(req)
 		rp.ServeHTTP(resp, req)
 	}
@@ -263,7 +260,7 @@ func (h *handler) Redirect(w http.ResponseWriter, r *http.Request) {
 		}
 		req := r.Clone(r.Context())
 		req.AddCookie(cookie)
-		http.Redirect(w, r, redirectUrl, h.redirectHttpStatus)
+		http.Redirect(w, req, redirectUrl, h.redirectHttpStatus)
 	} else {
 		http.Error(w, "Redirect Only support GET method: ", http.StatusBadRequest)
 		return
@@ -315,6 +312,12 @@ func (o handleOpts) ReverseProxyCreator(creator reverseProxyCreator) HandlerOpt 
 	}
 }
 
+func (o handleOpts) ResponseWrapperCreator(creator ResponseWrapCreator) HandlerOpt {
+	return func(h *handler) {
+		h.responseWrapCreator = creator
+	}
+}
+
 func (o handleOpts) AuthenticatorManager(manager auth.AuthenticatorManager) HandlerOpt {
 	return func(h *handler) {
 		h.authMgr = manager
@@ -343,41 +346,4 @@ func (o handleOpts) SetRedirectHttpStatus(redirectHttpStatus int) HandlerOpt {
 	return func(h *handler) {
 		h.redirectHttpStatus = redirectHttpStatus
 	}
-}
-
-type responseWriter struct {
-	http.ResponseWriter
-	buf  bytes.Buffer
-	code int
-}
-
-func newResponseWriter(w http.ResponseWriter) *responseWriter {
-	ret := responseWriter{}
-	ret.ResponseWriter = w
-	ret.code = DefaultHttpStatus
-	return &ret
-}
-
-func (r *responseWriter) WriteHeader(statusCode int) {
-	r.code = statusCode
-	//r.ResponseWriter.WriteHeader(statusCode)
-}
-
-func (r *responseWriter) Write(d []byte) (int, error) {
-	return r.buf.Write(d)
-}
-
-func (r *responseWriter) WriteString(d string) (int, error) {
-	return r.buf.WriteString(d)
-}
-
-func (r *responseWriter) reset() {
-	r.buf.Reset()
-	r.code = DefaultHttpStatus
-}
-
-func (r *responseWriter) flush() error {
-	r.ResponseWriter.WriteHeader(r.code)
-	_, err := r.ResponseWriter.Write(r.buf.Bytes())
-	return err
 }
