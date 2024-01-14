@@ -15,22 +15,27 @@
  * limitations under the License.
  */
 
-package token
+package errs
 
-type Token string
+import "fmt"
 
-func (t Token) String() string {
-	return string(t)
+type ErrorList []error
+
+func (e *ErrorList) Add(err error) *ErrorList {
+	*e = append(*e, err)
+	return e
 }
 
-func (t Token) Bytes() []byte {
-	return []byte(t)
+func (e ErrorList) Empty() bool {
+	return len(e) == 0
 }
 
-func FromString(str string) Token {
-	return Token(str)
-}
-
-type Setter interface {
-	Set(token Token)
+func (e ErrorList) Error() string {
+	switch len(e) {
+	case 0:
+		return "no errors"
+	case 1:
+		return e[0].Error()
+	}
+	return fmt.Sprintf("%s (and %d more errors)", e[0], len(e)-1)
 }

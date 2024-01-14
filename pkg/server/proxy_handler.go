@@ -21,6 +21,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/xfali/noauth-proxy/pkg/auth"
+	"github.com/xfali/noauth-proxy/pkg/errs"
 	"github.com/xfali/noauth-proxy/pkg/log"
 	"github.com/xfali/noauth-proxy/pkg/token"
 	"net/http"
@@ -269,10 +270,21 @@ func (h *handler) Redirect(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *handler) Close() error {
+	var errList errs.ErrorList
 	if h.tokenMgr != nil {
-		return h.tokenMgr.Close()
+		err := h.tokenMgr.Close()
+		if err != nil {
+			_ = errList.Add(err)
+		}
 	}
-	return nil
+	err := h.authMgr.Close()
+	if err != nil {
+		_ = errList.Add(err)
+	}
+	if errList.Empty() {
+		return nil
+	}
+	return errList
 }
 
 func (h *handler) getProxy(authentication auth.AuthenticationElements) *httputil.ReverseProxy {

@@ -20,6 +20,7 @@ package token
 import (
 	"context"
 	"errors"
+	"fmt"
 	"github.com/xfali/noauth-proxy/pkg/clock"
 	"sync"
 	"time"
@@ -46,10 +47,9 @@ func NewManager(purgeInterval time.Duration) *defaultManager {
 		tokens: map[string]*tokenData{},
 		stopCh: make(chan struct{}),
 	}
-	if purgeInterval <= 0 {
-		purgeInterval = defaultPurgeInterval
+	if purgeInterval > 0 {
+		go ret.purgeLoop(purgeInterval)
 	}
-	go ret.purgeLoop(purgeInterval)
 	return ret
 }
 
@@ -64,6 +64,9 @@ func (m *defaultManager) Generate(ctx context.Context, data interface{}, expire 
 	for {
 		token := RandomToken(32)
 		if _, ok := m.tokens[token]; !ok {
+			if s, ok := data.(Setter); ok {
+				s.Set(Token(token))
+			}
 			m.tokens[token] = &tokenData{
 				expireTime: expire,
 				data:       data,
@@ -73,12 +76,44 @@ func (m *defaultManager) Generate(ctx context.Context, data interface{}, expire 
 	}
 }
 
+func (m *defaultManager) Set(ctx context.Context, token Token, data interface{}, expire time.Time, flag SetFlag) error {
+	m.tokenLock.Lock()
+	defer m.tokenLock.Unlock()
+
+	_, have := m.tokens[token.String()]
+	if have {
+		if flag&SetFlagNotExist != 0 {
+			return fmt.Errorf("Flag is SetFlagNotExist but value found ")
+		}
+	} else {
+		if flag&SetFlagMustExist != 0 {
+			return fmt.Errorf("Flag is SetFlagMustExist but value not found ")
+		}
+	}
+
+	if s, ok := data.(Setter); ok {
+		s.Set(token)
+	}
+	m.tokens[token.String()] = &tokenData{
+		expireTime: expire,
+		data:       data,
+	}
+	return nil
+}
+
 func (m *defaultManager) Get(ctx context.Context, token Token) (interface{}, error) {
 	m.tokenLock.Lock()
 	defer m.tokenLock.Unlock()
 
 	t := string(token)
 	if v, ok := m.tokens[t]; ok {
+		if !v.expireTime.IsZero() {
+			now := clock.Now()
+			if m.processExpire(now, token, v) {
+				return nil, errors.New("Invalid Token ")
+			}
+		}
+
 		if m.policy != nil && m.policy.OnTouch(token) {
 			delete(m.tokens, t)
 		}
@@ -111,17 +146,26 @@ func (m *defaultManager) purgeLoop(purgeInterval time.Duration) {
 	}
 }
 
+func (m *defaultManager) processExpire(now time.Time, token Token, data *tokenData) bool {
+	if data.expireTime.IsZero() {
+		return false
+	}
+	if data.expireTime.Before(now) {
+		if m.policy != nil && !m.policy.OnExpire(token) {
+			return true
+		}
+		delete(m.tokens, string(token))
+		return true
+	}
+	return false
+}
+
 func (m *defaultManager) doPurge() {
 	now := clock.Now()
 	m.tokenLock.Lock()
 	defer m.tokenLock.Unlock()
 
 	for k, v := range m.tokens {
-		if v.expireTime.Before(now) {
-			if m.policy != nil && !m.policy.OnExpire(Token(k)) {
-				continue
-			}
-			delete(m.tokens, k)
-		}
+		_ = m.processExpire(now, Token(k), v)
 	}
 }

@@ -19,6 +19,7 @@ package auth
 
 import (
 	"context"
+	"github.com/xfali/noauth-proxy/pkg/errs"
 	"sync"
 )
 
@@ -50,6 +51,23 @@ func (m *defaultAuthenticatorMgr) GetAuthenticator(ctx context.Context, authType
 
 	v, ok := m.authenticators[authType]
 	return v, ok
+}
+
+func (m *defaultAuthenticatorMgr) Close() error {
+	m.authLock.RLock()
+	defer m.authLock.RUnlock()
+
+	var errList errs.ErrorList
+	for _, v := range m.authenticators {
+		err := v.Close()
+		if err != nil {
+			_ = errList.Add(err)
+		}
+	}
+	if errList.Empty() {
+		return nil
+	}
+	return errList
 }
 
 func Register(authType string, authenticator Authenticator) bool {

@@ -24,4 +24,5 @@ import (
 type AuthenticatorManager interface {
 	Register(authType string, authenticator Authenticator) bool
 	GetAuthenticator(ctx context.Context, authType string) (authenticator Authenticator, have bool)
+	Close() error
 }

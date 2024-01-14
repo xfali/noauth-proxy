@@ -23,7 +23,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"github.com/xfali/noauth-proxy/pkg/encrypt"
 	"io"
 	"net/http"
@@ -85,7 +84,7 @@ type defaultAuthenticator struct {
 	encryptSvc encrypt.Service
 }
 
-func NewAuthenticator(factory AuthenticationFactory, refresher AuthenticationRefresher) *defaultAuthenticator {
+func NewPayloadAuthenticator(factory AuthenticationFactory, refresher AuthenticationRefresher) *defaultAuthenticator {
 	ret := &defaultAuthenticator{
 		factory:    factory,
 		encryptSvc: encrypt.GlobalService(),
@@ -190,6 +189,10 @@ func (a *defaultAuthenticator) ExtractAuthenticationElement(ctx context.Context,
 	//return nil, errors.New("Not support AuthenticationElements type ")
 }
 
+func (a *defaultAuthenticator) Close() error {
+	return nil
+}
+
 func (a *defaultAuthenticator) Refresh(ctx context.Context, authentication AuthenticationElements) error {
 	if a.refresher != nil {
 		return a.refresher.Refresh(ctx, authentication)
@@ -202,58 +205,4 @@ func (a *defaultAuthenticator) CreateAuthenticationElements(ctx context.Context,
 		return a.refresher.CreateAuthenticationElements(ctx, auth)
 	}
 	return nil, errors.New("Authentication Refresher not set ")
-}
-
-type UsernamePasswordAuthentication struct {
-	Protocol string `json:"protocol"`
-	Host     string `json:"host"`
-	Port     int    `json:"port"`
-	Username string `json:"username"`
-	Password string `json:"password"`
-
-	service encrypt.Service
-}
-
-func (a *UsernamePasswordAuthentication) SetEncrypt(service encrypt.Service) {
-	if service == nil {
-		a.service = encrypt.GlobalService()
-	} else {
-		a.service = service
-	}
-	//u, _ := a.service.Encrypt([]byte(a.Username))
-	//a.Username = string(u)
-	//p, _ := a.service.Encrypt([]byte(a.Password))
-	//a.Password = string(p)
-}
-
-func (a *UsernamePasswordAuthentication) PassAddress() string {
-	return fmt.Sprintf("%s://%s:%d", a.Protocol, a.Host, a.Port)
-}
-
-func (a *UsernamePasswordAuthentication) Key() string {
-	return fmt.Sprintf("%s@[%s]%s://%s:%d", a.Username, a.Password, a.Protocol, a.Host, a.Port)
-}
-
-func (a *UsernamePasswordAuthentication) AuthMarshal() ([]byte, error) {
-	v := *a
-	u, _ := a.service.Encrypt([]byte(a.Username))
-	p, _ := a.service.Encrypt([]byte(a.Password))
-	v.Username = base64.StdEncoding.EncodeToString(u)
-	v.Password = base64.StdEncoding.EncodeToString(p)
-	return json.Marshal(v)
-}
-
-func (a *UsernamePasswordAuthentication) AuthUnmarshal(data []byte) error {
-	err := json.Unmarshal(data, a)
-	if err != nil {
-		return err
-	}
-	du, _ := base64.StdEncoding.DecodeString(a.Username)
-	dp, _ := base64.StdEncoding.DecodeString(a.Password)
-	u, _ := a.service.Decrypt(du)
-	p, _ := a.service.Decrypt(dp)
-
-	a.Username = string(u)
-	a.Password = string(p)
-	return nil
 }

@@ -22,9 +22,18 @@ import (
 	"time"
 )
 
+type SetFlag int
+
+const (
+	SetFlagNone      = 0
+	SetFlagNotExist  = 1
+	SetFlagMustExist = 1 << 1
+)
+
 type Manager interface {
 	SetRevocationPolicy(policy RevocationPolicy)
 	Generate(ctx context.Context, data interface{}, expire time.Time) (Token, error)
+	Set(ctx context.Context, token Token, data interface{}, expire time.Time, flag SetFlag) error
 	Get(ctx context.Context, token Token) (interface{}, error)
 	Close() error
 }
