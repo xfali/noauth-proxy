@@ -33,12 +33,12 @@ import (
 )
 
 type tokenAuthenticator struct {
-	factory        AuthenticationFactory
-	refresher      AuthenticationRefresher
-	attachNotifier AttachAuthenticationElementNotifier
-	manager        token.Manager
-	encryptSvc     encrypt.Service
-	respModifier   ResponseModifier
+	factory      AuthenticationFactory
+	refresher    AuthenticationRefresher
+	elemNotifier AuthenticationElementsCreateNotifier
+	manager      token.Manager
+	encryptSvc   encrypt.Service
+	respModifier ResponseModifier
 
 	tokenExpireTime time.Duration
 }
@@ -50,10 +50,10 @@ type tokenAuthData struct {
 
 func NewAuthenticator(factory AuthenticationFactory, refresher AuthenticationRefresher, opts ...tokenAuthenticatorOpt) *tokenAuthenticator {
 	ret := &tokenAuthenticator{
-		factory:        factory,
-		manager:        token.NewManager(token.ManagerOpts.Filter(token.NewMapFilter())),
-		encryptSvc:     encrypt.GlobalService(),
-		attachNotifier: &DefaultAttachAuthenticationElementNotifier{},
+		factory:      factory,
+		manager:      token.NewManager(token.ManagerOpts.Filter(token.NewMapFilter())),
+		encryptSvc:   encrypt.GlobalService(),
+		elemNotifier: &DefaultAuthenticationElementsCreateNotifier{},
 	}
 	if refresher != nil {
 		ret.refresher = refresher
@@ -135,7 +135,7 @@ func (a *tokenAuthenticator) AttachAuthenticationElement(ctx context.Context, re
 		HttpOnly: true,
 	}
 	http.SetCookie(resp, cookie)
-	return a.attachNotifier.AuthenticationElementAttached(ctx, resp, auth, authElem)
+	return a.elemNotifier.AuthenticationElementsCreated(ctx, resp, auth, authElem)
 }
 
 func (a *tokenAuthenticator) ExtractAuthenticationElement(ctx context.Context, req *http.Request) (AuthenticationElements, error) {
@@ -155,11 +155,11 @@ func (a *tokenAuthenticator) ExtractAuthenticationElement(ctx context.Context, r
 	//return nil, errors.New("Not support AuthenticationElements type ")
 }
 
-func (a *tokenAuthenticator) Refresh(ctx context.Context, authentication AuthenticationElements) error {
+func (a *tokenAuthenticator) Refresh(ctx context.Context, resp http.ResponseWriter, authentication AuthenticationElements) error {
 	if a.refresher != nil {
-		if err := a.refresher.Refresh(ctx, authentication); err == nil {
-			return nil
-		}
+		//if err := a.refresher.Refresh(ctx, authentication); err == nil {
+		//	return nil
+		//}
 		wrapper := authentication.(*AuthenticationElementsTokenWrapper)
 		d, err := a.manager.Get(ctx, wrapper.token)
 		if err != nil {
@@ -174,7 +174,8 @@ func (a *tokenAuthenticator) Refresh(ctx context.Context, authentication Authent
 
 		authData.authElem = NewAuthenticationElementsTokenWrapper(elem)
 		err = a.manager.Set(ctx, wrapper.token, authData, a.expireTime(), token.SetFlagNone)
-		return err
+
+		return a.elemNotifier.AuthenticationElementsCreated(ctx, resp, authData.auth, elem)
 	}
 	return errors.New("Authentication Refresher not set ")
 }
@@ -184,13 +185,6 @@ func (a *tokenAuthenticator) expireTime() time.Time {
 		return clock.Now().Add(a.tokenExpireTime)
 	}
 	return time.Time{}
-}
-
-func (a *tokenAuthenticator) CreateAuthenticationElements(ctx context.Context, auth Authentication) (AuthenticationElements, error) {
-	if a.refresher != nil {
-		return a.refresher.CreateAuthenticationElements(ctx, auth)
-	}
-	return nil, errors.New("Authentication Refresher not set ")
 }
 
 func (d *tokenAuthData) Key() string {
@@ -229,16 +223,16 @@ func (o tokenAuthenticatorOpts) Modifier(modifyFunc ResponseModifier) tokenAuthe
 	}
 }
 
-func (o tokenAuthenticatorOpts) AttachNotifier(notifier AttachAuthenticationElementNotifier) tokenAuthenticatorOpt {
+func (o tokenAuthenticatorOpts) AttachNotifier(notifier DefaultAuthenticationElementsCreateNotifier) tokenAuthenticatorOpt {
 	return func(authenticator *tokenAuthenticator) {
-		authenticator.attachNotifier = notifier
+		authenticator.elemNotifier = notifier
 	}
 }
 
-type DefaultAttachAuthenticationElementNotifier struct {
+type DefaultAuthenticationElementsCreateNotifier struct {
 }
 
-func (n DefaultAttachAuthenticationElementNotifier) AuthenticationElementAttached(ctx context.Context, resp http.ResponseWriter, authentication Authentication, authenticationElements AuthenticationElements) error {
+func (n DefaultAuthenticationElementsCreateNotifier) AuthenticationElementsCreated(ctx context.Context, resp http.ResponseWriter, authentication Authentication, authenticationElements AuthenticationElements) error {
 	if authenticationElements != nil {
 		if attcher, ok := authenticationElements.(ResponseAttacher); ok {
 			attcher.AttachToResponse(resp)

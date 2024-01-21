@@ -204,7 +204,7 @@ func (a *defaultAuthenticator) Close() error {
 	return nil
 }
 
-func (a *defaultAuthenticator) Refresh(ctx context.Context, authentication AuthenticationElements) error {
+func (a *defaultAuthenticator) Refresh(ctx context.Context, resp http.ResponseWriter, authentication AuthenticationElements) error {
 	if a.refresher != nil {
 		return a.refresher.Refresh(ctx, authentication)
 	}

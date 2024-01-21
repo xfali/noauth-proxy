@@ -48,6 +48,15 @@ func (a *ExampleAuthenticationElement) AttachToRequest(req *http.Request) {
 	req.Header.Add("Authorization", token)
 }
 
+func (a *ExampleAuthenticationElement) AttachToResponse(resp http.ResponseWriter) {
+	http.SetCookie(resp, &http.Cookie{
+		Name:     "Authorization",
+		Value:    token,
+		Path:     "/",
+		HttpOnly: true,
+	})
+}
+
 func Refresh(ctx context.Context) error {
 	token = token2.RandomToken(16)
 	return nil

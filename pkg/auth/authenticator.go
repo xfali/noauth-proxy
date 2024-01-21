@@ -28,10 +28,6 @@ type Authenticator interface {
 	ReadAuthentication(ctx context.Context, req *http.Request) (Authentication, error)
 	AttachAuthenticationElement(ctx context.Context, resp http.ResponseWriter, auth Authentication) error
 	ExtractAuthenticationElement(ctx context.Context, req *http.Request) (AuthenticationElements, error)
+	Refresh(ctx context.Context, resp http.ResponseWriter, authentication AuthenticationElements) error
 	Close() error
-	AuthenticationRefresher
-}
-
-type AttachAuthenticationElementNotifier interface {
-	AuthenticationElementAttached(ctx context.Context, resp http.ResponseWriter, authentication Authentication, authenticationElements AuthenticationElements) error
 }

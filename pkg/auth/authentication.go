@@ -55,3 +55,7 @@ type AuthenticationRefresher interface {
 	Refresh(ctx context.Context, auth AuthenticationElements) error
 	CreateAuthenticationElements(ctx context.Context, auth Authentication) (AuthenticationElements, error)
 }
+
+type AuthenticationElementsCreateNotifier interface {
+	AuthenticationElementsCreated(ctx context.Context, resp http.ResponseWriter, authentication Authentication, authenticationElements AuthenticationElements) error
+}
