@@ -31,3 +31,7 @@ type Authenticator interface {
 	Close() error
 	AuthenticationRefresher
 }
+
+type AttachAuthenticationElementNotifier interface {
+	AuthenticationElementAttached(ctx context.Context, resp http.ResponseWriter, authentication Authentication, authenticationElements AuthenticationElements) error
+}

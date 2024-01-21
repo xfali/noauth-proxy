@@ -168,6 +168,9 @@ func (a *defaultAuthenticator) AttachAuthenticationElement(ctx context.Context, 
 		HttpOnly: true,
 	}
 	http.SetCookie(resp, cookie)
+	if attcher, ok := authElem.(ResponseAttacher); ok {
+		attcher.AttachToResponse(resp)
+	}
 	return nil
 }
 

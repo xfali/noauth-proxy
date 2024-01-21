@@ -67,4 +67,12 @@ func main() {
 	log.Print(resp.Status)
 	io.Copy(os.Stdout, resp.Body)
 	resp.Body.Close()
+
+	resp, err = http.DefaultClient.Do(request)
+	if err != nil {
+		log.Fatal(err)
+	}
+	log.Print(resp.Status)
+	io.Copy(os.Stdout, resp.Body)
+	resp.Body.Close()
 }

@@ -33,11 +33,12 @@ import (
 )
 
 type tokenAuthenticator struct {
-	factory      AuthenticationFactory
-	refresher    AuthenticationRefresher
-	manager      token.Manager
-	encryptSvc   encrypt.Service
-	respModifier ResponseModifier
+	factory        AuthenticationFactory
+	refresher      AuthenticationRefresher
+	attachNotifier AttachAuthenticationElementNotifier
+	manager        token.Manager
+	encryptSvc     encrypt.Service
+	respModifier   ResponseModifier
 
 	tokenExpireTime time.Duration
 }
@@ -49,9 +50,10 @@ type tokenAuthData struct {
 
 func NewAuthenticator(factory AuthenticationFactory, refresher AuthenticationRefresher, opts ...tokenAuthenticatorOpt) *tokenAuthenticator {
 	ret := &tokenAuthenticator{
-		factory:    factory,
-		manager:    token.NewManager(token.ManagerOpts.Filter(token.NewMapFilter())),
-		encryptSvc: encrypt.GlobalService(),
+		factory:        factory,
+		manager:        token.NewManager(token.ManagerOpts.Filter(token.NewMapFilter())),
+		encryptSvc:     encrypt.GlobalService(),
+		attachNotifier: &DefaultAttachAuthenticationElementNotifier{},
 	}
 	if refresher != nil {
 		ret.refresher = refresher
@@ -133,7 +135,7 @@ func (a *tokenAuthenticator) AttachAuthenticationElement(ctx context.Context, re
 		HttpOnly: true,
 	}
 	http.SetCookie(resp, cookie)
-	return nil
+	return a.attachNotifier.AuthenticationElementAttached(ctx, resp, auth, authElem)
 }
 
 func (a *tokenAuthenticator) ExtractAuthenticationElement(ctx context.Context, req *http.Request) (AuthenticationElements, error) {
@@ -170,7 +172,7 @@ func (a *tokenAuthenticator) Refresh(ctx context.Context, authentication Authent
 			return err
 		}
 
-		authData.authElem = elem
+		authData.authElem = NewAuthenticationElementsTokenWrapper(elem)
 		err = a.manager.Set(ctx, wrapper.token, authData, a.expireTime(), token.SetFlagNone)
 		return err
 	}
@@ -225,4 +227,22 @@ func (o tokenAuthenticatorOpts) Modifier(modifyFunc ResponseModifier) tokenAuthe
 	return func(authenticator *tokenAuthenticator) {
 		authenticator.respModifier = modifyFunc
 	}
+}
+
+func (o tokenAuthenticatorOpts) AttachNotifier(notifier AttachAuthenticationElementNotifier) tokenAuthenticatorOpt {
+	return func(authenticator *tokenAuthenticator) {
+		authenticator.attachNotifier = notifier
+	}
+}
+
+type DefaultAttachAuthenticationElementNotifier struct {
+}
+
+func (n DefaultAttachAuthenticationElementNotifier) AuthenticationElementAttached(ctx context.Context, resp http.ResponseWriter, authentication Authentication, authenticationElements AuthenticationElements) error {
+	if authenticationElements != nil {
+		if attcher, ok := authenticationElements.(ResponseAttacher); ok {
+			attcher.AttachToResponse(resp)
+		}
+	}
+	return nil
 }

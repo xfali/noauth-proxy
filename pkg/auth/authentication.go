@@ -37,10 +37,18 @@ type Authentication interface {
 	PassAddress() string
 }
 
+type RequestAttacher interface {
+	AttachToRequest(req *http.Request)
+}
+
+type ResponseAttacher interface {
+	AttachToResponse(resp http.ResponseWriter)
+}
+
 type AuthenticationElements interface {
 	Key() string
 	SetEncrypt(service encrypt.Service)
-	AttachToRequest(req *http.Request)
+	RequestAttacher
 }
 
 type AuthenticationRefresher interface {

@@ -146,7 +146,7 @@ func (h *handler) Proxy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	auth, err := authenticator.ExtractAuthenticationElement(ctx, r)
+	authElm, err := authenticator.ExtractAuthenticationElement(ctx, r)
 	if err != nil {
 		w.WriteHeader(http.StatusBadGateway)
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -154,7 +154,7 @@ func (h *handler) Proxy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rp := h.getProxy(auth)
+	rp := h.getProxy(authElm)
 	if rp == nil {
 		w.WriteHeader(http.StatusBadGateway)
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -166,16 +166,16 @@ func (h *handler) Proxy(w http.ResponseWriter, r *http.Request) {
 	defer resp.DoFlush()
 	resp.Reset(w)
 
-	auth.AttachToRequest(req)
+	authElm.AttachToRequest(req)
 	rp.ServeHTTP(resp, req)
 	if resp.HttpStatus() == http.StatusUnauthorized {
-		err = authenticator.Refresh(ctx, auth)
+		err = authenticator.Refresh(ctx, authElm)
 		if err != nil {
 			h.logger("Refresh Authentication failed: %v \n", err)
 			return
 		}
 		resp.Reset(w)
-		auth.AttachToRequest(req)
+		authElm.AttachToRequest(req)
 		rp.ServeHTTP(resp, req)
 	}
 }
