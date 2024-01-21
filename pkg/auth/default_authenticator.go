@@ -82,6 +82,7 @@ type defaultAuthenticator struct {
 	factory    AuthenticationFactory
 	refresher  AuthenticationRefresher
 	encryptSvc encrypt.Service
+	modifyFunc ModifyFunc
 }
 
 func NewPayloadAuthenticator(factory AuthenticationFactory, refresher AuthenticationRefresher) *defaultAuthenticator {
@@ -109,6 +110,13 @@ func (a *defaultAuthenticator) newAuthenticationElements(req *http.Request) Auth
 
 func (a *defaultAuthenticator) SetEncrypt(service encrypt.Service) {
 	a.encryptSvc = service
+}
+
+func (a *defaultAuthenticator) Modify(resp *http.Response, authentication Authentication) error {
+	if a.modifyFunc != nil {
+		return a.modifyFunc(resp, authentication)
+	}
+	return nil
 }
 
 func (a *defaultAuthenticator) ReadAuthentication(ctx context.Context, req *http.Request) (Authentication, error) {

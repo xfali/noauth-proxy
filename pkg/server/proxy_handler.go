@@ -111,7 +111,7 @@ func (h *handler) Prepare(w http.ResponseWriter, r *http.Request) {
 			Path:     "/",
 			HttpOnly: true,
 		})
-		err = h.tryCreateProxy(authentication)
+		err = h.tryCreateProxy(authentication, authenticator)
 		if err != nil {
 			http.Error(w, "Create Reverse Proxy failed: "+err.Error(), http.StatusBadRequest)
 			return
@@ -255,7 +255,7 @@ func (h *handler) Redirect(w http.ResponseWriter, r *http.Request) {
 			HttpOnly: true,
 		}
 		http.SetCookie(w, cookie)
-		err = h.tryCreateProxy(authentication)
+		err = h.tryCreateProxy(authentication, authenticator)
 		if err != nil {
 			http.Error(w, "Create Reverse Proxy failed: "+err.Error(), http.StatusBadRequest)
 			return
@@ -294,7 +294,7 @@ func (h *handler) getProxy(authentication auth.AuthenticationElements) *httputil
 	return h.proxies[authentication.Key()]
 }
 
-func (h *handler) tryCreateProxy(authentication auth.Authentication) error {
+func (h *handler) tryCreateProxy(authentication auth.Authentication, authenticator auth.Authenticator) error {
 	h.proxyLock.Lock()
 	defer h.proxyLock.Unlock()
 
@@ -309,6 +309,11 @@ func (h *handler) tryCreateProxy(authentication auth.Authentication) error {
 	}
 
 	p := h.reverseProxyCreator(u)
+	if m, ok := authenticator.(auth.ResponseModifier); ok {
+		p.ModifyResponse = func(response *http.Response) error {
+			return m.Modify(response, authentication)
+		}
+	}
 
 	h.proxies[key] = p
 	return nil

@@ -33,10 +33,11 @@ import (
 )
 
 type tokenAuthenticator struct {
-	factory    AuthenticationFactory
-	refresher  AuthenticationRefresher
-	manager    token.Manager
-	encryptSvc encrypt.Service
+	factory      AuthenticationFactory
+	refresher    AuthenticationRefresher
+	manager      token.Manager
+	encryptSvc   encrypt.Service
+	respModifier ResponseModifier
 
 	tokenExpireTime time.Duration
 }
@@ -79,6 +80,13 @@ func (a *tokenAuthenticator) newAuthenticationElements(req *http.Request) Authen
 
 func (a *tokenAuthenticator) SetEncrypt(service encrypt.Service) {
 	a.encryptSvc = service
+}
+
+func (a *tokenAuthenticator) Modify(resp *http.Response, authentication Authentication) error {
+	if a.respModifier != nil {
+		return a.respModifier.Modify(resp, authentication)
+	}
+	return nil
 }
 
 func (a *tokenAuthenticator) ReadAuthentication(ctx context.Context, req *http.Request) (Authentication, error) {
@@ -210,5 +218,11 @@ func (o tokenAuthenticatorOpts) TokenManager(manager token.Manager) tokenAuthent
 func (o tokenAuthenticatorOpts) TokenExpireTime(tokenExpireTime time.Duration) tokenAuthenticatorOpt {
 	return func(authenticator *tokenAuthenticator) {
 		authenticator.tokenExpireTime = tokenExpireTime
+	}
+}
+
+func (o tokenAuthenticatorOpts) Modifier(modifyFunc ResponseModifier) tokenAuthenticatorOpt {
+	return func(authenticator *tokenAuthenticator) {
+		authenticator.respModifier = modifyFunc
 	}
 }
