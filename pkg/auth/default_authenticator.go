@@ -162,10 +162,9 @@ func (a *defaultAuthenticator) AttachAuthenticationElement(ctx context.Context, 
 	}
 	cookieData := base64.StdEncoding.EncodeToString(d)
 	cookie := &http.Cookie{
-		Name:     CookieNamePayload,
-		Value:    cookieData,
-		Path:     "/",
-		HttpOnly: true,
+		Name:  CookieNamePayload,
+		Value: cookieData,
+		Path:  "/",
 	}
 	http.SetCookie(resp, cookie)
 	if attcher, ok := authElem.(ResponseAttacher); ok {

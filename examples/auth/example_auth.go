@@ -50,10 +50,9 @@ func (a *ExampleAuthenticationElement) AttachToRequest(req *http.Request) {
 
 func (a *ExampleAuthenticationElement) AttachToResponse(resp http.ResponseWriter) {
 	http.SetCookie(resp, &http.Cookie{
-		Name:     "Authorization",
-		Value:    token,
-		Path:     "/",
-		HttpOnly: true,
+		Name:  "Authorization",
+		Value: token,
+		Path:  "/",
 	})
 }
 

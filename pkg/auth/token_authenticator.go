@@ -129,10 +129,9 @@ func (a *tokenAuthenticator) AttachAuthenticationElement(ctx context.Context, re
 	}
 	t := base64.StdEncoding.EncodeToString(tokenValue.Bytes())
 	cookie := &http.Cookie{
-		Name:     CookieNamePayload,
-		Value:    t,
-		Path:     "/",
-		HttpOnly: true,
+		Name:  CookieNamePayload,
+		Value: t,
+		Path:  "/",
 	}
 	http.SetCookie(resp, cookie)
 	return a.elemNotifier.AuthenticationElementsCreated(ctx, resp, auth, authElem)

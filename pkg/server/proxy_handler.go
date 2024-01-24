@@ -106,10 +106,9 @@ func (h *handler) Prepare(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		http.SetCookie(w, &http.Cookie{
-			Name:     CookieNameType,
-			Value:    authType,
-			Path:     "/",
-			HttpOnly: true,
+			Name:  CookieNameType,
+			Value: authType,
+			Path:  "/",
 		})
 		err = h.tryCreateProxy(authentication, authenticator)
 		if err != nil {
@@ -249,10 +248,9 @@ func (h *handler) Redirect(w http.ResponseWriter, r *http.Request) {
 		}
 
 		cookie := &http.Cookie{
-			Name:     CookieNameType,
-			Value:    authType,
-			Path:     "/",
-			HttpOnly: true,
+			Name:  CookieNameType,
+			Value: authType,
+			Path:  "/",
 		}
 		http.SetCookie(w, cookie)
 		err = h.tryCreateProxy(authentication, authenticator)
