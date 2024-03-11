@@ -19,6 +19,7 @@ package auth
 
 import (
 	"fmt"
+	"log"
 	"net/http"
 )
 
@@ -28,12 +29,16 @@ func Run(port int) error {
 	mux.HandleFunc("/test", func(writer http.ResponseWriter, request *http.Request) {
 		if first {
 			first = false
-			http.Error(writer, "No Authorization", http.StatusUnauthorized)
+			log.Println("First")
+			http.Error(writer, "No Authorization: first 401", http.StatusUnauthorized)
 			return
 		}
 		v := request.Header.Get("Authorization")
+		log.Printf("token: %s expect: %s\n", v, token)
+		tokenLocker.Lock()
+		defer tokenLocker.Unlock()
 		if v == "" || v != token {
-			http.Error(writer, "No Authorization", http.StatusUnauthorized)
+			http.Error(writer, "No Authorization: invalid token", http.StatusUnauthorized)
 			return
 		}
 		writer.Write([]byte("Hello world"))

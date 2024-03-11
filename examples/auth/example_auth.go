@@ -22,10 +22,12 @@ import (
 	"github.com/xfali/noauth-proxy/pkg/encrypt"
 	token2 "github.com/xfali/noauth-proxy/pkg/token"
 	"net/http"
+	"sync"
 )
 
 var (
-	token = token2.RandomToken(16)
+	token       = token2.RandomToken(16)
+	tokenLocker sync.Mutex
 )
 
 type ExampleAuthenticationElement struct {
@@ -45,19 +47,25 @@ func (a *ExampleAuthenticationElement) Key() string {
 }
 
 func (a *ExampleAuthenticationElement) AttachToRequest(req *http.Request) {
-	req.Header.Add("Authorization", token)
+	tokenLocker.Lock()
+	req.Header.Set("Authorization", token)
+	tokenLocker.Unlock()
 }
 
 func (a *ExampleAuthenticationElement) AttachToResponse(resp http.ResponseWriter) {
+	tokenLocker.Lock()
 	http.SetCookie(resp, &http.Cookie{
 		Name:  "Authorization",
 		Value: token,
 		Path:  "/",
 	})
+	tokenLocker.Unlock()
 }
 
 func Refresh(ctx context.Context) error {
+	tokenLocker.Lock()
 	token = token2.RandomToken(16)
+	tokenLocker.Unlock()
 	return nil
 }
 
