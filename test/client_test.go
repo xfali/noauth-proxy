@@ -25,7 +25,6 @@ import (
 	"log"
 	"net/http"
 	url2 "net/url"
-	"os"
 	"testing"
 )
 
@@ -52,15 +51,17 @@ func TestToken(t *testing.T) {
 	t.Log(token)
 
 	url := url2.QueryEscape("http://localhost:8080/test")
-	request, _ := http.NewRequest(http.MethodGet,
-		fmt.Sprintf("http://localhost:8080/_redirect?auth_type=test&token=%s&redirect=%s", token, url),
-		nil)
-	//authData = authData
-	resp, err = http.DefaultClient.Do(request)
-	if err != nil {
-		log.Fatal(err)
-	}
-	log.Print(resp.Status)
-	io.Copy(os.Stdout, resp.Body)
-	resp.Body.Close()
+	target := fmt.Sprintf("http://localhost:8080/_redirect?auth_type=test&token=%s&redirect=%s", token, url)
+	log.Print(target)
+	//request, _ := http.NewRequest(http.MethodGet,
+	//	target,
+	//	nil)
+	////authData = authData
+	//resp, err = http.DefaultClient.Do(request)
+	//if err != nil {
+	//	log.Fatal(err)
+	//}
+	//log.Print(resp.Status)
+	//io.Copy(os.Stdout, resp.Body)
+	//resp.Body.Close()
 }

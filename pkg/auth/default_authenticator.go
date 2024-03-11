@@ -144,33 +144,44 @@ func (a *defaultAuthenticator) ReadAuthentication(ctx context.Context, req *http
 }
 
 func (a *defaultAuthenticator) AttachAuthenticationElement(ctx context.Context, resp http.ResponseWriter, auth Authentication) error {
-	authElem, err := a.refresher.CreateAuthenticationElements(ctx, auth)
+	attacher, err := a.CreateAuthenticationElementAttacher(ctx, auth)
 	if err != nil {
 		return err
+	}
+	attacher.AttachToResponse(resp)
+	return nil
+}
+
+func (a *defaultAuthenticator) CreateAuthenticationElementAttacher(ctx context.Context, auth Authentication) (ResponseAttacher, error) {
+	authElem, err := a.refresher.CreateAuthenticationElements(ctx, auth)
+	if err != nil {
+		return nil, err
 	}
 	var d []byte
 	if m, ok := authElem.(Marshaler); ok {
 		d, err = m.AuthMarshal()
 		if err != nil {
-			return err
+			return nil, err
 		}
 	} else {
 		d, err = json.Marshal(authElem)
 		if err != nil {
-			return err
+			return nil, err
 		}
 	}
 	cookieData := base64.StdEncoding.EncodeToString(d)
-	cookie := &http.Cookie{
-		Name:  CookieNamePayload,
-		Value: cookieData,
-		Path:  "/",
-	}
-	http.SetCookie(resp, cookie)
-	if attcher, ok := authElem.(ResponseAttacher); ok {
-		attcher.AttachToResponse(resp)
-	}
-	return nil
+
+	return ResponseAttachFunc(func(resp http.ResponseWriter) {
+		cookie := &http.Cookie{
+			Name:  CookieNamePayload,
+			Value: cookieData,
+			Path:  "/",
+		}
+		http.SetCookie(resp, cookie)
+		if attcher, ok := authElem.(ResponseAttacher); ok {
+			attcher.AttachToResponse(resp)
+		}
+	}), nil
 }
 
 func (a *defaultAuthenticator) ExtractAuthenticationElement(ctx context.Context, req *http.Request) (AuthenticationElements, error) {

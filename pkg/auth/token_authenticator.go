@@ -50,10 +50,9 @@ type tokenAuthData struct {
 
 func NewAuthenticator(factory AuthenticationFactory, refresher AuthenticationRefresher, opts ...tokenAuthenticatorOpt) *tokenAuthenticator {
 	ret := &tokenAuthenticator{
-		factory:      factory,
-		manager:      token.NewManager(token.ManagerOpts.Filter(token.NewMapFilter())),
-		encryptSvc:   encrypt.GlobalService(),
-		elemNotifier: &DefaultAuthenticationElementsCreateNotifier{},
+		factory:    factory,
+		manager:    token.NewManager(token.ManagerOpts.Filter(token.NewMapFilter())),
+		encryptSvc: encrypt.GlobalService(),
 	}
 	if refresher != nil {
 		ret.refresher = refresher
@@ -116,25 +115,48 @@ func (a *tokenAuthenticator) ReadAuthentication(ctx context.Context, req *http.R
 }
 
 func (a *tokenAuthenticator) AttachAuthenticationElement(ctx context.Context, resp http.ResponseWriter, auth Authentication) error {
-	authElem, err := a.refresher.CreateAuthenticationElements(ctx, auth)
+	attacher, err := a.CreateAuthenticationElementAttacher(ctx, auth)
 	if err != nil {
 		return err
 	}
+	attacher.AttachToResponse(resp)
+	return nil
+}
+
+func (a *tokenAuthenticator) CreateAuthenticationElementAttacher(ctx context.Context, auth Authentication) (ResponseAttacher, error) {
+	authElem, err := a.refresher.CreateAuthenticationElements(ctx, auth)
+	if err != nil {
+		return nil, err
+	}
+	if a.elemNotifier != nil {
+		err = a.elemNotifier.AuthenticationElementsCreated(ctx, auth, authElem)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	tokenValue, err := a.manager.Generate(ctx, &tokenAuthData{
 		auth:     auth,
 		authElem: NewAuthenticationElementsTokenWrapper(authElem),
 	}, a.expireTime())
 	if err != nil {
-		return fmt.Errorf("Attach Authentication Element with token failed: %v ", err)
+		return nil, fmt.Errorf("Attach Authentication Element with token failed: %v ", err)
 	}
 	t := base64.StdEncoding.EncodeToString(tokenValue.Bytes())
-	cookie := &http.Cookie{
-		Name:  CookieNamePayload,
-		Value: t,
-		Path:  "/",
-	}
-	http.SetCookie(resp, cookie)
-	return a.elemNotifier.AuthenticationElementsCreated(ctx, resp, auth, authElem)
+	return NewDetectableResponseAttacherWithFunc(func(resp http.ResponseWriter) {
+		cookie := &http.Cookie{
+			Name:  CookieNamePayload,
+			Value: t,
+			Path:  "/",
+		}
+		http.SetCookie(resp, cookie)
+		if attcher, ok := authElem.(ResponseAttacher); ok {
+			attcher.AttachToResponse(resp)
+		}
+	}, func() bool {
+		d, cErr := a.manager.Get(context.Background(), tokenValue)
+		return cErr == nil && d != nil
+	}), nil
 }
 
 func (a *tokenAuthenticator) ExtractAuthenticationElement(ctx context.Context, req *http.Request) (AuthenticationElements, error) {
@@ -174,7 +196,10 @@ func (a *tokenAuthenticator) Refresh(ctx context.Context, resp http.ResponseWrit
 		authData.authElem = NewAuthenticationElementsTokenWrapper(elem)
 		err = a.manager.Set(ctx, wrapper.token, authData, a.expireTime(), token.SetFlagNone)
 
-		return a.elemNotifier.AuthenticationElementsCreated(ctx, resp, authData.auth, elem)
+		if a.elemNotifier != nil {
+			return a.elemNotifier.AuthenticationElementsCreated(ctx, authData.auth, elem)
+		}
+		return nil
 	}
 	return errors.New("Authentication Refresher not set ")
 }
@@ -222,20 +247,45 @@ func (o tokenAuthenticatorOpts) Modifier(modifyFunc ResponseModifier) tokenAuthe
 	}
 }
 
-func (o tokenAuthenticatorOpts) AttachNotifier(notifier DefaultAuthenticationElementsCreateNotifier) tokenAuthenticatorOpt {
+func (o tokenAuthenticatorOpts) AttachNotifier(notifier AuthenticationElementsCreateNotifier) tokenAuthenticatorOpt {
 	return func(authenticator *tokenAuthenticator) {
 		authenticator.elemNotifier = notifier
 	}
 }
 
-type DefaultAuthenticationElementsCreateNotifier struct {
+type DetectableResponseAttacherFunc struct {
+	AttachFunc func(resp http.ResponseWriter)
+	CheckFunc  func() bool
 }
 
-func (n DefaultAuthenticationElementsCreateNotifier) AuthenticationElementsCreated(ctx context.Context, resp http.ResponseWriter, authentication Authentication, authenticationElements AuthenticationElements) error {
-	if authenticationElements != nil {
-		if attcher, ok := authenticationElements.(ResponseAttacher); ok {
-			attcher.AttachToResponse(resp)
-		}
+func NewDetectableResponseAttacherWithFunc(attachFunc func(resp http.ResponseWriter), checkFunc func() bool) *DetectableResponseAttacherFunc {
+	return &DetectableResponseAttacherFunc{
+		AttachFunc: attachFunc,
+		CheckFunc:  checkFunc,
 	}
-	return nil
+}
+
+func (r *DetectableResponseAttacherFunc) AttachToResponse(resp http.ResponseWriter) {
+	r.AttachFunc(resp)
+}
+
+func (r *DetectableResponseAttacherFunc) IsValid() bool {
+	return r.CheckFunc()
+}
+
+type ResponseAttachFunc func(resp http.ResponseWriter)
+
+func (r ResponseAttachFunc) AttachToResponse(resp http.ResponseWriter) {
+	r(resp)
+}
+
+type TokenTouchedPolicy struct {
+}
+
+func (p *TokenTouchedPolicy) OnExpire(token token.Token) bool {
+	return false
+}
+
+func (p *TokenTouchedPolicy) OnTouch(token token.Token) bool {
+	return false
 }

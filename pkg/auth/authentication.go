@@ -45,6 +45,11 @@ type ResponseAttacher interface {
 	AttachToResponse(resp http.ResponseWriter)
 }
 
+type DetectableResponseAttacher interface {
+	ResponseAttacher
+	IsValid() bool
+}
+
 type AuthenticationElements interface {
 	Key() string
 	SetEncrypt(service encrypt.Service)
@@ -57,5 +62,5 @@ type AuthenticationRefresher interface {
 }
 
 type AuthenticationElementsCreateNotifier interface {
-	AuthenticationElementsCreated(ctx context.Context, resp http.ResponseWriter, authentication Authentication, authenticationElements AuthenticationElements) error
+	AuthenticationElementsCreated(ctx context.Context, authentication Authentication, authenticationElements AuthenticationElements) error
 }

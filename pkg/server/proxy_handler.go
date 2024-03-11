@@ -60,6 +60,9 @@ type handler struct {
 	tokenExpireTime     time.Duration
 	redirectHttpStatus  int
 
+	attachers  map[string]auth.ResponseAttacher
+	attachLock sync.RWMutex
+
 	proxies   map[string]*httputil.ReverseProxy
 	proxyLock sync.RWMutex
 }
@@ -70,11 +73,13 @@ func NewHandler(logger log.LogFunc, opts ...HandlerOpt) *handler {
 	ret := &handler{
 		logger:              logger,
 		authMgr:             auth.DefaultAuthenticatorMgr,
+		attachers:           map[string]auth.ResponseAttacher{},
 		proxies:             map[string]*httputil.ReverseProxy{},
 		reverseProxyCreator: DefaultReverseProxyCreator,
 		responseWrapCreator: DefaultResponseWriter,
 		tokenExpireTime:     DefaultTokenExpireTime,
 		redirectHttpStatus:  DefaultRedirectHttpStatus,
+		tokenMgr:            token.NewManager(token.ManagerOpts.RevocationPolicy(&TokenTouchedPolicy{})),
 	}
 	for _, opt := range opts {
 		opt(ret)
@@ -202,6 +207,36 @@ func (h *handler) GenerateToken(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Get Token failed: "+err.Error(), http.StatusBadRequest)
 			return
 		}
+		attacher := h.getResponseAttacher(authentication)
+		// Check attacher is valid
+		if attacher != nil {
+			invalid := false
+			if datt, ok := attacher.(auth.DetectableResponseAttacher); ok {
+				if !datt.IsValid() {
+					invalid = true
+				}
+			}
+			if !invalid {
+				_, _ = w.Write(t.Bytes())
+				return
+			}
+		}
+		attacher, err = authenticator.CreateAuthenticationElementAttacher(ctx, authentication)
+		if err != nil {
+			http.Error(w, "Attach Authentication failed: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		err = h.tryCreateResponseAttacher(authentication, attacher)
+		if err != nil {
+			http.Error(w, "Create Response Attacher failed: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		err = h.tryCreateProxy(authentication, authenticator)
+		if err != nil {
+			http.Error(w, "Create Reverse Proxy failed: "+err.Error(), http.StatusBadRequest)
+			return
+		}
 		_, _ = w.Write(t.Bytes())
 	} else {
 		http.Error(w, "Generate Token Only support POST method ", http.StatusBadRequest)
@@ -235,17 +270,14 @@ func (h *handler) Redirect(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		authentication := data.(auth.Authentication)
-		authenticator, have := h.authMgr.GetAuthenticator(ctx, authType)
-		if !have {
-			http.Error(w, "Auth type not support: "+authType, http.StatusBadRequest)
+
+		attacher := h.getResponseAttacher(authentication)
+		if attacher == nil {
+			http.Error(w, "Get Authentication failed: nil", http.StatusUnauthorized)
 			return
 		}
 
-		err = authenticator.AttachAuthenticationElement(ctx, w, authentication)
-		if err != nil {
-			http.Error(w, "Attach Authentication failed: "+err.Error(), http.StatusBadRequest)
-			return
-		}
+		attacher.AttachToResponse(w)
 
 		cookie := &http.Cookie{
 			Name:  CookieNameType,
@@ -253,11 +285,7 @@ func (h *handler) Redirect(w http.ResponseWriter, r *http.Request) {
 			Path:  "/",
 		}
 		http.SetCookie(w, cookie)
-		err = h.tryCreateProxy(authentication, authenticator)
-		if err != nil {
-			http.Error(w, "Create Reverse Proxy failed: "+err.Error(), http.StatusBadRequest)
-			return
-		}
+
 		req := r.Clone(r.Context())
 		req.AddCookie(cookie)
 		http.Redirect(w, req, redirectUrl, h.redirectHttpStatus)
@@ -283,6 +311,22 @@ func (h *handler) Close() error {
 		return nil
 	}
 	return errList
+}
+
+func (h *handler) getResponseAttacher(authentication auth.Authentication) auth.ResponseAttacher {
+	h.attachLock.RLock()
+	defer h.attachLock.RUnlock()
+
+	return h.attachers[authentication.Key()]
+}
+
+func (h *handler) tryCreateResponseAttacher(authentication auth.Authentication, attacher auth.ResponseAttacher) error {
+	h.attachLock.Lock()
+	defer h.attachLock.Unlock()
+
+	key := authentication.Key()
+	h.attachers[key] = attacher
+	return nil
 }
 
 func (h *handler) getProxy(authentication auth.AuthenticationElements) *httputil.ReverseProxy {
@@ -362,4 +406,15 @@ func (o handleOpts) SetRedirectHttpStatus(redirectHttpStatus int) HandlerOpt {
 	return func(h *handler) {
 		h.redirectHttpStatus = redirectHttpStatus
 	}
+}
+
+type TokenTouchedPolicy struct {
+}
+
+func (p *TokenTouchedPolicy) OnExpire(token token.Token) bool {
+	return true
+}
+
+func (p *TokenTouchedPolicy) OnTouch(token token.Token) bool {
+	return true
 }

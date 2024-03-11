@@ -25,7 +25,6 @@ import (
 	"github.com/xfali/noauth-proxy/pkg/app"
 	"github.com/xfali/noauth-proxy/pkg/auth"
 	"github.com/xfali/noauth-proxy/pkg/server"
-	"github.com/xfali/noauth-proxy/pkg/token"
 	"os"
 )
 
@@ -33,8 +32,8 @@ func main() {
 	log := func(format string, args ...interface{}) {
 		_, _ = fmt.Fprintf(os.Stderr, format, args...)
 	}
-	h := server.NewHandler(log,
-		server.HandleOpts.SetTokenManager(token.NewManager()))
+	h := server.NewHandler(log)
+	//h := server.NewHandler(log, server.HandleOpts.SetTokenManager(token.NewManager()))
 	defer h.Close()
 	auth.Register("test", auth.NewAuthenticator(
 		auth.NewAuthenticationFactory(&auth.UsernamePasswordAuthentication{}, &ex_auth.ExampleAuthenticationElement{}),

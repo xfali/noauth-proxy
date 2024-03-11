@@ -246,6 +246,12 @@ func (o managerOpts) Filter(filter Filter) defaultManagerOpt {
 	}
 }
 
+func (o managerOpts) RevocationPolicy(policy RevocationPolicy) defaultManagerOpt {
+	return func(manager *defaultManager) {
+		manager.policy = policy
+	}
+}
+
 type DummyFilter struct {
 }
 
