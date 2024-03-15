@@ -50,6 +50,11 @@ type proxy struct {
 type HandlerOpt func(*handler)
 type ResponseWrapCreator func() ResponseWriterWrapper
 
+type attacherData struct {
+	attacher   auth.ResponseAttacher
+	expireTime time.Time
+}
+
 type handler struct {
 	logger              log.LogFunc
 	reverseProxyCreator reverseProxyCreator
@@ -60,8 +65,9 @@ type handler struct {
 	tokenExpireTime     time.Duration
 	redirectHttpStatus  int
 
-	attachers  map[string]auth.ResponseAttacher
-	attachLock sync.RWMutex
+	attacherExpireTime time.Duration
+	attachers          map[string]*attacherData
+	attachLock         sync.RWMutex
 
 	proxies   map[string]*httputil.ReverseProxy
 	proxyLock sync.RWMutex
@@ -73,7 +79,7 @@ func NewHandler(logger log.LogFunc, opts ...HandlerOpt) *handler {
 	ret := &handler{
 		logger:              logger,
 		authMgr:             auth.DefaultAuthenticatorMgr,
-		attachers:           map[string]auth.ResponseAttacher{},
+		attachers:           map[string]*attacherData{},
 		proxies:             map[string]*httputil.ReverseProxy{},
 		reverseProxyCreator: DefaultReverseProxyCreator,
 		responseWrapCreator: DefaultResponseWriter,
@@ -317,7 +323,20 @@ func (h *handler) getResponseAttacher(authentication auth.Authentication) auth.R
 	h.attachLock.RLock()
 	defer h.attachLock.RUnlock()
 
-	return h.attachers[authentication.Key()]
+	key := authentication.Key()
+	v := h.attachers[key]
+	if v == nil {
+		return nil
+	}
+	if h.attacherExpireTime > 0 {
+		if time.Now().Before(v.expireTime) {
+			return v.attacher
+		} else {
+			delete(h.attachers, key)
+			return nil
+		}
+	}
+	return v.attacher
 }
 
 func (h *handler) tryCreateResponseAttacher(authentication auth.Authentication, attacher auth.ResponseAttacher) error {
@@ -325,7 +344,13 @@ func (h *handler) tryCreateResponseAttacher(authentication auth.Authentication, 
 	defer h.attachLock.Unlock()
 
 	key := authentication.Key()
-	h.attachers[key] = attacher
+	v := &attacherData{
+		attacher: attacher,
+	}
+	if h.attacherExpireTime > 0 {
+		v.expireTime = time.Now().Add(h.attacherExpireTime)
+	}
+	h.attachers[key] = v
 	return nil
 }
 
@@ -405,6 +430,12 @@ func (o handleOpts) SetTokenExpireTime(tokenExpireTime time.Duration) HandlerOpt
 func (o handleOpts) SetRedirectHttpStatus(redirectHttpStatus int) HandlerOpt {
 	return func(h *handler) {
 		h.redirectHttpStatus = redirectHttpStatus
+	}
+}
+
+func (o handleOpts) SetAttacherExpireTime(attachersExpireTime time.Duration) HandlerOpt {
+	return func(h *handler) {
+		h.attacherExpireTime = attachersExpireTime
 	}
 }
 
