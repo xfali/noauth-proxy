@@ -29,6 +29,6 @@ type Authenticator interface {
 	AttachAuthenticationElement(ctx context.Context, resp http.ResponseWriter, auth Authentication) error
 	CreateAuthenticationElementAttacher(ctx context.Context, auth Authentication) (ResponseAttacher, error)
 	ExtractAuthenticationElement(ctx context.Context, req *http.Request) (AuthenticationElements, error)
-	Refresh(ctx context.Context, resp http.ResponseWriter, authentication AuthenticationElements) error
+	Refresh(ctx context.Context, resp http.ResponseWriter, authentication AuthenticationElements) (AuthenticationElements, error)
 	Close() error
 }

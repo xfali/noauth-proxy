@@ -173,7 +173,7 @@ func (h *handler) Proxy(w http.ResponseWriter, r *http.Request) {
 	authElm.AttachToRequest(req)
 	rp.ServeHTTP(resp, req)
 	if resp.HttpStatus() == http.StatusUnauthorized {
-		err = authenticator.Refresh(ctx, resp, authElm)
+		authElm, err = authenticator.Refresh(ctx, resp, authElm)
 		if err != nil {
 			h.logger("Refresh Authentication failed: %v \n", err)
 			return

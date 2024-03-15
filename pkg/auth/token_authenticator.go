@@ -176,7 +176,7 @@ func (a *tokenAuthenticator) ExtractAuthenticationElement(ctx context.Context, r
 	//return nil, errors.New("Not support AuthenticationElements type ")
 }
 
-func (a *tokenAuthenticator) Refresh(ctx context.Context, resp http.ResponseWriter, authentication AuthenticationElements) error {
+func (a *tokenAuthenticator) Refresh(ctx context.Context, resp http.ResponseWriter, authentication AuthenticationElements) (AuthenticationElements, error) {
 	if a.refresher != nil {
 		//if err := a.refresher.Refresh(ctx, authentication); err == nil {
 		//	return nil
@@ -184,24 +184,24 @@ func (a *tokenAuthenticator) Refresh(ctx context.Context, resp http.ResponseWrit
 		wrapper := authentication.(*AuthenticationElementsTokenWrapper)
 		d, err := a.manager.Get(ctx, wrapper.token)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		authData := d.(*tokenAuthData)
 
 		elem, err := a.refresher.CreateAuthenticationElements(ctx, authData.auth)
 		if err != nil {
-			return err
+			return nil, err
 		}
 
 		authData.authElem = NewAuthenticationElementsTokenWrapper(elem)
 		err = a.manager.Set(ctx, wrapper.token, authData, a.expireTime(), token.SetFlagNone)
 
 		if a.elemNotifier != nil {
-			return a.elemNotifier.AuthenticationElementsCreated(ctx, authData.auth, elem)
+			return elem, a.elemNotifier.AuthenticationElementsCreated(ctx, authData.auth, elem)
 		}
-		return nil
+		return elem, nil
 	}
-	return errors.New("Authentication Refresher not set ")
+	return nil, errors.New("Authentication Refresher not set ")
 }
 
 func (a *tokenAuthenticator) expireTime() time.Time {

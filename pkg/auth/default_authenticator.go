@@ -214,11 +214,12 @@ func (a *defaultAuthenticator) Close() error {
 	return nil
 }
 
-func (a *defaultAuthenticator) Refresh(ctx context.Context, resp http.ResponseWriter, authentication AuthenticationElements) error {
+func (a *defaultAuthenticator) Refresh(ctx context.Context, resp http.ResponseWriter, authentication AuthenticationElements) (AuthenticationElements, error) {
 	if a.refresher != nil {
-		return a.refresher.Refresh(ctx, authentication)
+		err := a.refresher.Refresh(ctx, authentication)
+		return authentication, err
 	}
-	return errors.New("Authentication Refresher not set ")
+	return nil, errors.New("Authentication Refresher not set ")
 }
 
 func (a *defaultAuthenticator) CreateAuthenticationElements(ctx context.Context, auth Authentication) (AuthenticationElements, error) {
